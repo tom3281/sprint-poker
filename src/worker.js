@@ -3,9 +3,9 @@ const PHASES = {
   LOBBY: "lobby",
   REVEAL: "reveal",
 };
-// 52枚デッキで「場5 + 手札2/人」なので物理的には (52-5)/2 = 23人まで配れる。
-// ただし飲み会向け UX (ショウダウン画面の見やすさ・1卓の盛り上がり) を考えて
-// 8人で打ち切る。9人目以降は WebSocket close code 4030 で弾く。
+// 28枚デッキ (8-A) で「場5 + 手札2/人」なので物理的には (28-5)/2 = 11人まで。
+// 飲み会向け UX (ショウダウン画面の見やすさ・1卓の盛り上がり) を考えて 8人で
+// 打ち切る。9人目以降は WebSocket close code 4030 で弾く。
 const MAX_PLAYERS = 8;
 const GRACE_MS = 15_000;          // hold a seat through disconnect/reconnect
 const TIEBREAKER_DELAY_MS = 4_000; // savor the showdown before a tiebreaker re-deal
@@ -17,10 +17,10 @@ const SUITS = [
   { sym: "♦", color: "red" },
   { sym: "♣", color: "black" },
 ];
-// Standard 52-card deck.
+// 28-card short deck — 8 through A only (7 ranks × 4 suits).
+// 役強度は標準ホールデム順 (Royal > SF > 4K > FH > F > S > 3K > 2P > P > HC) のまま。
+// デッキが薄いので強い役が出やすく、1局の決着が速い。
 const RANKS = [
-  { v: 2, label: "2" }, { v: 3, label: "3" }, { v: 4, label: "4" },
-  { v: 5, label: "5" }, { v: 6, label: "6" }, { v: 7, label: "7" },
   { v: 8, label: "8" }, { v: 9, label: "9" }, { v: 10, label: "10" },
   { v: 11, label: "J" }, { v: 12, label: "Q" }, { v: 13, label: "K" },
   { v: 14, label: "A" },
@@ -61,10 +61,12 @@ function evaluate5(hand) {
     if (ranks[0] - ranks[4] === 4) {
       isStraight = true;
       straightTop = ranks[0];
-    } else if (ranks[0] === 14 && ranks[1] === 5 && ranks[2] === 4 && ranks[3] === 3 && ranks[4] === 2) {
-      // A-2-3-4-5 wheel; A plays low so straightTop = 5.
+    } else if (ranks[0] === 14 && ranks[1] === 11 && ranks[2] === 10 && ranks[3] === 9 && ranks[4] === 8) {
+      // 28-card deck wheel: A-8-9-10-J (A plays low, below 8).
+      // straightTop = 7 はデッキに無いランクの sentinel — 8-9-10-J-Q (top 12) 等
+      // との比較で常に最弱ストレートになる。
       isStraight = true;
-      straightTop = 5;
+      straightTop = 7;
     }
   }
 

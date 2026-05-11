@@ -9,7 +9,6 @@ const PHASES = {
 const MAX_PLAYERS = 8;
 const GRACE_MS = 15_000;          // hold a seat through disconnect/reconnect
 const TIEBREAKER_DELAY_MS = 4_000; // savor the showdown before a tiebreaker re-deal
-const STAGE_DELAY_MS = 1_500;      // pacing between flop / turn / river / showdown
 const MAX_TIEBREAKER_ROUNDS = 6;   // safety net against pathological infinite ties
 
 // REVEAL phase substages — drive the progressive flop→turn→river→showdown flow.
@@ -269,6 +268,18 @@ export class GameRoom {
           this.startShowdown([...this.players.keys()]);
         }
         break;
+      case "advance":
+        // Host taps to flip the next stage: FLOP → TURN → RIVER → SHOWDOWN.
+        // The SHOWDOWN itself triggers _resolveShowdown which decides drinks /
+        // tiebreaker. Spectators / non-hosts can't advance.
+        if (playerId === this.hostId
+            && this.phase === PHASES.REVEAL
+            && (this.stage === STAGES.FLOP
+                || this.stage === STAGES.TURN
+                || this.stage === STAGES.RIVER)) {
+          this._advanceStage();
+        }
+        break;
       case "next":
         // Only the host can advance, and only at the final showdown with no
         // tiebreaker still pending.
@@ -353,9 +364,10 @@ export class GameRoom {
     this.dealAndCompute();
   }
 
-  // Step 1 of a round: deal cards and reveal the flop. The turn / river /
-  // showdown are scheduled by `_advanceStage` so everyone sees each board
-  // change at the same beat.
+  // Round entry: deal cards and reveal the flop. The host advances through
+  // TURN / RIVER / SHOWDOWN by tapping the "めくる" button (the "advance"
+  // message). Tiebreaker re-deal is still server-driven (auto-fires after
+  // TIEBREAKER_DELAY_MS once a tie is locked in at SHOWDOWN).
   dealAndCompute() {
     const deck = buildDeck();
     for (const [id, p] of this.players) {
@@ -363,20 +375,11 @@ export class GameRoom {
     }
     this._fullCommunity = [deck.pop(), deck.pop(), deck.pop(), deck.pop(), deck.pop()];
 
-    // Reset the showdown payload — kept null until the river burns through.
     this.lastResult = null;
     this.stage = STAGES.FLOP;
     this.community = this._fullCommunity.slice(0, 3);
-    this.broadcast();
-    this._scheduleNextStage();
-  }
-
-  _scheduleNextStage() {
     this.clearTimer();
-    this.timer = setTimeout(() => {
-      this.timer = null;
-      this._advanceStage();
-    }, STAGE_DELAY_MS);
+    this.broadcast();
   }
 
   _advanceStage() {
@@ -384,12 +387,10 @@ export class GameRoom {
       this.stage = STAGES.TURN;
       this.community = this._fullCommunity.slice(0, 4);
       this.broadcast();
-      this._scheduleNextStage();
     } else if (this.stage === STAGES.TURN) {
       this.stage = STAGES.RIVER;
       this.community = this._fullCommunity.slice(0, 5);
       this.broadcast();
-      this._scheduleNextStage();
     } else if (this.stage === STAGES.RIVER) {
       this.stage = STAGES.SHOWDOWN;
       this._resolveShowdown();

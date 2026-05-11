@@ -256,6 +256,15 @@
   .reveal-board .community-card { width: 36px; }
   .reveal-board .community-card.in-best { box-shadow: 0 0 12px rgba(255,215,110,0.6); }
   .reveal-board .community-card.placeholder { opacity: 0.4; }
+  .waiting-host {
+    text-align: center;
+    font-size: 12px; letter-spacing: 3px;
+    color: rgba(255,255,255,0.55);
+    padding: 14px;
+    border: 1px dashed rgba(255,215,110,0.25);
+    border-radius: 12px;
+    background: rgba(0,0,0,0.2);
+  }
   .reveal-list { display: flex; flex-direction: column; gap: 8px; padding-bottom: 12px; }
   .reveal-row {
     background: rgba(0,0,0,0.3);
@@ -593,7 +602,7 @@
     </div>
     <button class="btn btn-primary" id="enterBtn">JOIN</button>
     <button class="btn-link-text" id="rulesBtn">ルールを見る</button>
-    <div class="version-tag">v0.3.0 · flop-turn-river</div>
+    <div class="version-tag">v0.4.0 · host-controlled</div>
   </div>
 
   <!-- ===== RULES OVERLAY ===== -->
@@ -608,10 +617,10 @@
         <dd>各自スマホで同じルームコードに JOIN (<b>最大8人</b>)。ロビーで全員揃ったらホストが START。判断・フォールドはなし。</dd>
 
         <dt>配り</dt>
-        <dd>自分の手札 <b>2枚</b>（自分だけ見える）と、場の共通カード <b>5枚</b>。場札は <b>FLOP (3枚) → TURN (1枚) → RIVER (1枚) → SHOWDOWN</b> の順に自動でめくれる。</dd>
+        <dd>自分の手札 <b>2枚</b>（自分だけ見える）と、場の共通カード <b>5枚</b>。場札は <b>ホストがボタンでめくる</b>: FLOP (3枚) → TURN (1枚) → RIVER (1枚) → SHOWDOWN の順。</dd>
 
         <dt>ショウダウン</dt>
-        <dd>RIVER まで開いた直後、7枚（手札2＋場5）から作れる <b>最強の5枚役</b> を全員自動で構成。<b>一番弱い人が飲む</b>。</dd>
+        <dd>ホストが SHOWDOWN ボタンを押すと、7枚（手札2＋場5）から作れる <b>最強の5枚役</b> を全員自動で構成。<b>一番弱い人が飲む</b>。</dd>
 
         <dt>決勝戦</dt>
         <dd>最弱役が2人以上タイなら、その人達だけで <b>再配り</b>（場も手札もリセット）して再勝負。決まるまで繰り返す。</dd>
@@ -663,7 +672,9 @@
     <div class="reveal-board" id="revealCommunity"></div>
     <div class="reveal-list" id="revealList"></div>
     <div class="footer-actions">
+      <button class="btn btn-primary" id="advanceBtn" style="display:none">TURN</button>
       <button class="btn btn-primary" id="nextBtn" style="display:none">NEXT HAND</button>
+      <div class="waiting-host" id="waitingHost" style="display:none">ホストの操作待ち</div>
       <button class="btn btn-ghost" id="leaveBtn2">退出</button>
     </div>
   </div>
@@ -671,7 +682,7 @@
 </div>
 
 <div class="toast" id="toast"></div>
-<div class="version-corner">v0.3.0</div>
+<div class="version-corner">v0.4.0</div>
 
 <script>
 "use strict";
@@ -1046,7 +1057,38 @@ function renderReveal() {
   });
 
   const isHost = serverState.you === serverState.hostId;
-  $("nextBtn").style.display = (isHost && isShowdown && isFinal) ? "" : "none";
+  // Three states for the footer:
+  //   - FLOP/TURN/RIVER + host  → "TURN/RIVER/SHOWDOWN" advance button
+  //   - SHOWDOWN + host + final → "NEXT HAND" button
+  //   - everyone else (incl. tiebreaker-pending) → "ホストの操作待ち"
+  const advanceBtn = $("advanceBtn");
+  const nextBtn = $("nextBtn");
+  const waiting = $("waitingHost");
+  advanceBtn.style.display = "none";
+  nextBtn.style.display = "none";
+  waiting.style.display = "none";
+  if (!isShowdown) {
+    if (isHost) {
+      advanceBtn.style.display = "";
+      advanceBtn.textContent =
+        stage === "flop"  ? "TURN" :
+        stage === "turn"  ? "RIVER" :
+        stage === "river" ? "SHOWDOWN" : "";
+    } else {
+      waiting.style.display = "";
+      waiting.textContent = `ホストの操作待ち · 次は ${
+        stage === "flop"  ? "TURN" :
+        stage === "turn"  ? "RIVER" :
+        stage === "river" ? "SHOWDOWN" : "—"
+      }`;
+    }
+  } else if (isFinal) {
+    if (isHost) nextBtn.style.display = "";
+    else { waiting.style.display = ""; waiting.textContent = "ホストの次のラウンド開始待ち"; }
+  } else if (tiebreakerScheduled) {
+    waiting.style.display = "";
+    waiting.textContent = "決勝戦を準備中…";
+  }
 
   if (revealKey === lastRevealKey) return;
   lastRevealKey = revealKey;
@@ -1184,6 +1226,7 @@ $("enterBtn").addEventListener("click", () => {
 });
 
 $("startBtn").addEventListener("click", () => send({ type: "start" }));
+$("advanceBtn").addEventListener("click", () => send({ type: "advance" }));
 $("nextBtn").addEventListener("click", () => send({ type: "next" }));
 $("leaveBtn").addEventListener("click", disconnect);
 $("leaveBtn2").addEventListener("click", disconnect);

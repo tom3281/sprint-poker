@@ -9,7 +9,16 @@ const PHASES = {
 const MAX_PLAYERS = 8;
 const GRACE_MS = 15_000;          // hold a seat through disconnect/reconnect
 const TIEBREAKER_DELAY_MS = 4_000; // savor the showdown before a tiebreaker re-deal
+const STAGE_DELAY_MS = 1_500;      // pacing between flop / turn / river / showdown
 const MAX_TIEBREAKER_ROUNDS = 6;   // safety net against pathological infinite ties
+
+// REVEAL phase substages — drive the progressive flop→turn→river→showdown flow.
+const STAGES = {
+  FLOP: "flop",         // 3 community cards visible
+  TURN: "turn",         // 4 community cards visible
+  RIVER: "river",       // 5 community cards visible
+  SHOWDOWN: "showdown", // 5 visible + everyone's hole + best-hand + loser
+};
 
 const SUITS = [
   { sym: "♠", color: "black" },
@@ -55,19 +64,14 @@ function evaluate5(hand) {
     .sort((a, b) => b.count - a.count || b.rank - a.rank);
   const countVals = sortedCounts.map(c => c.count);
 
+  // 28-card deck では A は high のみ。A-8-9-10-J を wheel として扱わない
+  // (= A と 8 は繋がない) ので、可能なストレートは 4 種類:
+  //   8-9-10-J-Q / 9-10-J-Q-K / 10-J-Q-K-A の3つ + Royal用 10-J-Q-K-A
   let isStraight = false;
   let straightTop = 0;
-  if (countVals[0] === 1) {
-    if (ranks[0] - ranks[4] === 4) {
-      isStraight = true;
-      straightTop = ranks[0];
-    } else if (ranks[0] === 14 && ranks[1] === 11 && ranks[2] === 10 && ranks[3] === 9 && ranks[4] === 8) {
-      // 28-card deck wheel: A-8-9-10-J (A plays low, below 8).
-      // straightTop = 7 はデッキに無いランクの sentinel — 8-9-10-J-Q (top 12) 等
-      // との比較で常に最弱ストレートになる。
-      isStraight = true;
-      straightTop = 7;
-    }
+  if (countVals[0] === 1 && ranks[0] - ranks[4] === 4) {
+    isStraight = true;
+    straightTop = ranks[0];
   }
 
   let tier;
@@ -172,6 +176,8 @@ export class GameRoom {
     this.eligibleIds = [];         // who holds cards in the current round
     this.roundNumber = 0;          // 1 = original showdown, 2+ = tiebreakers
     this.tiebreakerScheduled = false;
+    this.stage = null;             // STAGES.* while in REVEAL, null in LOBBY
+    this._fullCommunity = [];      // all 5 community cards (server-private until staged)
   }
 
   async fetch(request) {
@@ -264,9 +270,11 @@ export class GameRoom {
         }
         break;
       case "next":
-        // Only the host can advance, and only after a final (non-tiebreaker-pending) reveal.
+        // Only the host can advance, and only at the final showdown with no
+        // tiebreaker still pending.
         if (playerId === this.hostId
             && this.phase === PHASES.REVEAL
+            && this.stage === STAGES.SHOWDOWN
             && !this.tiebreakerScheduled) {
           this.resetToLobby();
         }
@@ -345,20 +353,51 @@ export class GameRoom {
     this.dealAndCompute();
   }
 
+  // Step 1 of a round: deal cards and reveal the flop. The turn / river /
+  // showdown are scheduled by `_advanceStage` so everyone sees each board
+  // change at the same beat.
   dealAndCompute() {
     const deck = buildDeck();
-    // Clear everyone's hole; deal only to eligible players.
     for (const [id, p] of this.players) {
-      if (this.eligibleIds.includes(id)) {
-        p.hole = [deck.pop(), deck.pop()];
-      } else {
-        p.hole = null;
-      }
+      p.hole = this.eligibleIds.includes(id) ? [deck.pop(), deck.pop()] : null;
     }
-    this.community = [];
-    for (let i = 0; i < 5; i++) this.community.push(deck.pop());
+    this._fullCommunity = [deck.pop(), deck.pop(), deck.pop(), deck.pop(), deck.pop()];
 
-    // Best hand per eligible
+    // Reset the showdown payload — kept null until the river burns through.
+    this.lastResult = null;
+    this.stage = STAGES.FLOP;
+    this.community = this._fullCommunity.slice(0, 3);
+    this.broadcast();
+    this._scheduleNextStage();
+  }
+
+  _scheduleNextStage() {
+    this.clearTimer();
+    this.timer = setTimeout(() => {
+      this.timer = null;
+      this._advanceStage();
+    }, STAGE_DELAY_MS);
+  }
+
+  _advanceStage() {
+    if (this.stage === STAGES.FLOP) {
+      this.stage = STAGES.TURN;
+      this.community = this._fullCommunity.slice(0, 4);
+      this.broadcast();
+      this._scheduleNextStage();
+    } else if (this.stage === STAGES.TURN) {
+      this.stage = STAGES.RIVER;
+      this.community = this._fullCommunity.slice(0, 5);
+      this.broadcast();
+      this._scheduleNextStage();
+    } else if (this.stage === STAGES.RIVER) {
+      this.stage = STAGES.SHOWDOWN;
+      this._resolveShowdown();
+    }
+  }
+
+  // Final step: best-hand evaluation, loser detection, tiebreaker scheduling.
+  _resolveShowdown() {
     const handsById = {};
     for (const id of this.eligibleIds) {
       const p = this.players.get(id);
@@ -369,7 +408,6 @@ export class GameRoom {
 
     let losers = [];
     const drinks = {};
-
     if (presentIds.length > 0) {
       let worstRef = handsById[presentIds[0]];
       for (const id of presentIds) {
@@ -393,7 +431,6 @@ export class GameRoom {
       this.tiebreakerScheduled = false;
       final = true;
     } else if (losers.length >= 2) {
-      // Tie — schedule next round
       this.tiebreakerScheduled = true;
       this.clearTimer();
       const tiedIds = [...losers];
@@ -434,8 +471,10 @@ export class GameRoom {
     this.phase = PHASES.LOBBY;
     this.clearTimer();
     this.community = [];
+    this._fullCommunity = [];
     this.eligibleIds = [];
     this.roundNumber = 0;
+    this.stage = null;
     this.tiebreakerScheduled = false;
     for (const p of this.players.values()) p.hole = null;
     this.lastResult = null;
@@ -459,12 +498,17 @@ export class GameRoom {
 
   viewForPlayer(playerId) {
     const me = this.players.get(playerId);
+    const isShowdown = this.stage === STAGES.SHOWDOWN;
     const players = [...this.players.entries()].map(([id, p]) => {
       const isYou = id === playerId;
-      // In REVEAL, eligible players' hole cards are visible to everyone.
-      // Eliminated (non-eligible) players have no hole this round.
-      const hole = (this.phase === PHASES.REVEAL && this.eligibleIds.includes(id))
-        ? p.hole : null;
+      // Hole-card visibility:
+      //   - to yourself: always while you're eligible during REVEAL
+      //   - to others: only at SHOWDOWN
+      //   - to spectators (eliminated this tiebreaker round): never
+      let hole = null;
+      if (this.phase === PHASES.REVEAL && this.eligibleIds.includes(id)) {
+        if (isYou || isShowdown) hole = p.hole;
+      }
       return {
         id,
         name: p.name,
@@ -483,11 +527,13 @@ export class GameRoom {
         you: playerId,
         community: this.phase === PHASES.REVEAL ? this.community : [],
         myHole: (this.phase === PHASES.REVEAL && me) ? me.hole : null,
-        result: this.phase === PHASES.REVEAL ? this.lastResult : null,
+        // Result only revealed at showdown — earlier stages are pre-result.
+        result: isShowdown ? this.lastResult : null,
         eligibleIds: [...this.eligibleIds],
         roundNumber: this.roundNumber,
         isTiebreaker: this.roundNumber > 1,
         tiebreakerScheduled: this.tiebreakerScheduled,
+        stage: this.stage,
       },
     };
   }

@@ -255,6 +255,7 @@
   }
   .reveal-board .community-card { width: 36px; }
   .reveal-board .community-card.in-best { box-shadow: 0 0 12px rgba(255,215,110,0.6); }
+  .reveal-board .community-card.placeholder { opacity: 0.4; }
   .reveal-list { display: flex; flex-direction: column; gap: 8px; padding-bottom: 12px; }
   .reveal-row {
     background: rgba(0,0,0,0.3);
@@ -592,7 +593,7 @@
     </div>
     <button class="btn btn-primary" id="enterBtn">JOIN</button>
     <button class="btn-link-text" id="rulesBtn">ルールを見る</button>
-    <div class="version-tag">v0.2.0 · showdown</div>
+    <div class="version-tag">v0.3.0 · flop-turn-river</div>
   </div>
 
   <!-- ===== RULES OVERLAY ===== -->
@@ -604,13 +605,13 @@
         <dd>使用カードは <b>8・9・10・J・Q・K・A の28枚</b>。デッキが薄いので強い役が出やすく、1局の決着が速い。<b>役の強さは通常のホールデムと同じ</b>。</dd>
 
         <dt>進行</dt>
-        <dd>各自スマホで同じルームコードに JOIN (<b>最大8人</b>)。ロビーで全員揃ったらホストが START。判断・フォールドはなし、即ショウダウン。</dd>
+        <dd>各自スマホで同じルームコードに JOIN (<b>最大8人</b>)。ロビーで全員揃ったらホストが START。判断・フォールドはなし。</dd>
 
         <dt>配り</dt>
-        <dd>自分の手札 <b>2枚</b>（自分だけ見える）と、場の共通カード <b>5枚</b>（全員見える）。</dd>
+        <dd>自分の手札 <b>2枚</b>（自分だけ見える）と、場の共通カード <b>5枚</b>。場札は <b>FLOP (3枚) → TURN (1枚) → RIVER (1枚) → SHOWDOWN</b> の順に自動でめくれる。</dd>
 
         <dt>ショウダウン</dt>
-        <dd>7枚（手札2＋場5）から作れる <b>最強の5枚役</b> を全員自動で構成。<b>一番弱い人が飲む</b>。</dd>
+        <dd>RIVER まで開いた直後、7枚（手札2＋場5）から作れる <b>最強の5枚役</b> を全員自動で構成。<b>一番弱い人が飲む</b>。</dd>
 
         <dt>決勝戦</dt>
         <dd>最弱役が2人以上タイなら、その人達だけで <b>再配り</b>（場も手札もリセット）して再勝負。決まるまで繰り返す。</dd>
@@ -624,7 +625,7 @@
           ロイヤルフラッシュ → ストレートフラッシュ → フォーカード → フルハウス → フラッシュ → ストレート → スリーカード → ツーペア → ワンペア → ハイカード
         </dd>
         <dd style="opacity:.65; font-size:11px; letter-spacing:1px; margin-top:6px;">
-          ※ 28枚デッキのストレートは <b>A-8-9-10-J</b> (ホイール, 最弱) / 8-9-10-J-Q / 9-10-J-Q-K / 10-J-Q-K-A の4種類のみ。
+          ※ 28枚デッキのストレートは <b>8-9-10-J-Q</b> / <b>9-10-J-Q-K</b> / <b>10-J-Q-K-A</b> の3種類のみ。A は high のみ (A-8 は繋がない)。
         </dd>
       </dl>
       <div class="close-hint">タップで閉じる</div>
@@ -670,7 +671,7 @@
 </div>
 
 <div class="toast" id="toast"></div>
-<div class="version-corner">v0.2.0</div>
+<div class="version-corner">v0.3.0</div>
 
 <script>
 "use strict";
@@ -830,6 +831,11 @@ function cardHTML(card, options = {}) {
 }
 
 function cardKey(c) { return c ? `${c.v}-${c.suit.sym}` : ""; }
+// Placeholder for community / hole positions whose card hasn't been revealed yet.
+// Empty `.card` (no `.flipped` class) renders with the back face showing.
+function facedownCardHTML() {
+  return `<div class="card"><div class="card-face card-back"></div><div class="card-face card-front"></div></div>`;
+}
 
 // ===== Connection =====
 function connect(name, room) {
@@ -1020,9 +1026,12 @@ function renderReveal() {
   const isTiebreaker = !!serverState.isTiebreaker;
   const tiebreakerScheduled = !!serverState.tiebreakerScheduled;
   const isFinal = !!result.final;
+  const stage = serverState.stage || "flop";
+  const isShowdown = stage === "showdown";
 
-  // Skip re-render if nothing material changed (server may re-broadcast).
+  // Stage transitions trigger re-render via the included `stage` key.
   const revealKey = JSON.stringify({
+    stage,
     community: community.map(c => `${c.v}-${c.suit.sym}`),
     players: players.map(p => ({
       id: p.id,
@@ -1031,70 +1040,80 @@ function renderReveal() {
     })),
     drinks: result.drinks || {},
     losers: result.losers || [],
-    round: result.roundNumber || 0,
+    round: serverState.roundNumber || 0,
     tbs: tiebreakerScheduled,
     final: isFinal,
   });
 
   const isHost = serverState.you === serverState.hostId;
-  // The host's "NEXT HAND" button only appears on the final round (no
-  // pending tiebreaker). Mid-tiebreaker the server auto-advances.
-  $("nextBtn").style.display = (isHost && isFinal) ? "" : "none";
+  $("nextBtn").style.display = (isHost && isShowdown && isFinal) ? "" : "none";
 
   if (revealKey === lastRevealKey) return;
   lastRevealKey = revealKey;
 
-  // ── Round badge ──
+  // ── Stage / round badge ──
   const roundTag = $("roundTag");
+  roundTag.style.display = "";
+  const stageLabel = isShowdown ? "SHOWDOWN" : stage.toUpperCase();
   if (isTiebreaker) {
-    roundTag.style.display = "";
     roundTag.classList.remove("original");
-    roundTag.textContent = `決勝戦 #${(result.roundNumber || 2) - 1}`;
+    const tbN = (serverState.roundNumber || 2) - 1;
+    roundTag.textContent = `決勝戦 #${tbN} · ${stageLabel}`;
   } else {
-    roundTag.style.display = "";
     roundTag.classList.add("original");
-    roundTag.textContent = "SHOWDOWN";
+    roundTag.textContent = stageLabel;
   }
 
-  // ── Loser banner ──
-  const losers = (result.losers || []).map(id => players.find(p => p.id === id)).filter(Boolean);
-  const verdictLabel = $("verdictLabel");
-  const winnerName = $("winnerName");
-  if (losers.length === 0) {
-    verdictLabel.textContent = "—";
-    winnerName.textContent = "—";
-  } else if (losers.length === 1 && isFinal) {
-    verdictLabel.textContent = "LOSER";
-    winnerName.textContent = losers[0].name;
-  } else if (tiebreakerScheduled) {
-    verdictLabel.textContent = `${losers.length}人タイ → 決勝戦へ`;
-    winnerName.textContent = losers.map(l => l.name).join(" / ");
-  } else {
-    // Final by safety net (max tiebreaker rounds reached) — all tied losers drink
-    verdictLabel.textContent = "LOSERS (タイ)";
-    winnerName.textContent = losers.map(l => l.name).join(" / ");
-  }
-
-  // ── Drink banner ──
-  const drinkerList = players
-    .filter(p => (result.drinks?.[p.id] || 0) > 0)
-    .map(p => `${p.name} ${result.drinks[p.id]}杯`);
+  // ── Loser banner — only meaningful at showdown ──
+  const verdictBanner = document.querySelector(".verdict-banner");
   const drinkBanner = $("drinkBanner");
-  if (drinkerList.length > 0) {
-    drinkBanner.classList.remove("no-drinkers");
-    $("drinkerText").textContent = drinkerList.join("　/　");
-  } else if (tiebreakerScheduled) {
-    drinkBanner.classList.add("no-drinkers");
-    $("drinkerText").textContent = "決まり次第";
+  if (isShowdown) {
+    verdictBanner.style.display = "";
+    drinkBanner.style.display = "";
+    const losers = (result.losers || []).map(id => players.find(p => p.id === id)).filter(Boolean);
+    const verdictLabel = $("verdictLabel");
+    const winnerName = $("winnerName");
+    if (losers.length === 0) {
+      verdictLabel.textContent = "—";
+      winnerName.textContent = "—";
+    } else if (losers.length === 1 && isFinal) {
+      verdictLabel.textContent = "LOSER";
+      winnerName.textContent = losers[0].name;
+    } else if (tiebreakerScheduled) {
+      verdictLabel.textContent = `${losers.length}人タイ → 決勝戦へ`;
+      winnerName.textContent = losers.map(l => l.name).join(" / ");
+    } else {
+      verdictLabel.textContent = "LOSERS (タイ)";
+      winnerName.textContent = losers.map(l => l.name).join(" / ");
+    }
+
+    const drinkerList = players
+      .filter(p => (result.drinks?.[p.id] || 0) > 0)
+      .map(p => `${p.name} ${result.drinks[p.id]}杯`);
+    if (drinkerList.length > 0) {
+      drinkBanner.classList.remove("no-drinkers");
+      $("drinkerText").textContent = drinkerList.join("　/　");
+    } else if (tiebreakerScheduled) {
+      drinkBanner.classList.add("no-drinkers");
+      $("drinkerText").textContent = "決まり次第";
+    } else {
+      drinkBanner.classList.add("no-drinkers");
+      $("drinkerText").textContent = "—";
+    }
   } else {
-    drinkBanner.classList.add("no-drinkers");
-    $("drinkerText").textContent = "—";
+    verdictBanner.style.display = "none";
+    drinkBanner.style.display = "none";
   }
 
-  // ── Community cards ──
-  $("revealCommunity").innerHTML = community.map(c =>
+  // ── Community cards — pad with face-down placeholders so the row width
+  //    stays stable from flop through river. ──
+  let communityHtml = community.map(c =>
     `<div class="community-card">${cardHTML(c, { flipped: true })}</div>`
   ).join("");
+  for (let i = community.length; i < 5; i++) {
+    communityHtml += `<div class="community-card placeholder">${facedownCardHTML()}</div>`;
+  }
+  $("revealCommunity").innerHTML = communityHtml;
 
   // ── Player rows ──
   $("revealList").innerHTML = players.map(p => {
@@ -1102,22 +1121,33 @@ function renderReveal() {
     const isLoser = losersSet.has(p.id);
     const isEligible = eligibleSet.has(p.id);
     const best = result.bestHands?.[p.id];
-    const handName = best ? best.name : (isEligible ? "" : "観戦");
+    const handName = best ? best.name : (!isEligible ? "観戦" : (isShowdown ? "" : "—"));
 
     let classes = "reveal-row";
     if (drinks > 0) classes += " drinker";
     if (!isEligible) classes += " spectator";
 
-    const yourCardSet = isLoser && best && best.cards
+    const winnerCardSet = isLoser && best && best.cards
       ? new Set(best.cards.map(cardKey))
       : null;
-    const cardsHtml = (p.hole || []).map(c => {
-      const inBest = yourCardSet && yourCardSet.has(cardKey(c));
-      return `<div class="pcard ${inBest ? "in-best" : ""}">${cardHTML(c, { flipped: true })}</div>`;
-    }).join("");
+
+    // Hole cards visibility:
+    //   • own cards (server sends `hole`): face-up immediately
+    //   • others while eligible but hidden (pre-showdown): face-down placeholders
+    //   • spectator (eliminated this tiebreaker round): nothing
+    let cardsHtml = "";
+    if (p.hole && p.hole.length > 0) {
+      cardsHtml = p.hole.map(c => {
+        const inBest = winnerCardSet && winnerCardSet.has(cardKey(c));
+        return `<div class="pcard ${inBest ? "in-best" : ""}">${cardHTML(c, { flipped: true })}</div>`;
+      }).join("");
+    } else if (isEligible) {
+      cardsHtml = `<div class="pcard">${facedownCardHTML()}</div>`.repeat(2);
+    }
 
     let drinkHtml;
     if (!isEligible) drinkHtml = `<div class="pdrinks">観戦</div>`;
+    else if (!isShowdown) drinkHtml = `<div class="pdrinks">—</div>`;
     else if (drinks > 0) drinkHtml = `<div class="pdrinks heavy">${drinks}杯</div>`;
     else if (isLoser && tiebreakerScheduled) drinkHtml = `<div class="pdrinks">決勝戦</div>`;
     else drinkHtml = `<div class="pdrinks win">セーフ</div>`;

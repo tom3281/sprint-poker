@@ -1,0 +1,1258 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#1a0a04">
+<title>SPRINT POKER — 3分タイパ・ショートデッキ</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    font-family: -apple-system, "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+    background: radial-gradient(ellipse at 50% 30%, #5a1810 0%, #2e0a04 50%, #1a0604 90%);
+    color: #fff;
+    overflow-x: hidden;
+    user-select: none; -webkit-user-select: none;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; pointer-events: none;
+    background: radial-gradient(circle at 50% 50%, transparent 0%, rgba(0,0,0,0.3) 80%);
+  }
+  .app {
+    min-height: 100dvh; display: flex; flex-direction: column;
+    padding: 18px; max-width: 720px; margin: 0 auto; width: 100%;
+    position: relative; z-index: 1;
+  }
+
+  /* Screens */
+  .screen { display: none; flex: 1; flex-direction: column; }
+  .screen.active { display: flex; }
+
+  /* Title */
+  .title { text-align: center; padding: 28px 16px 22px; }
+  .title h1 {
+    font-family: 'Inter', 'Helvetica Neue', system-ui, sans-serif;
+    font-size: clamp(28px, 9vw, 48px);
+    margin: 0; letter-spacing: -0.02em; font-weight: 900;
+    background: linear-gradient(180deg, #ffd76e 0%, #c69234 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    line-height: 1.05;
+  }
+  .title h1.sub { font-size: clamp(20px, 6vw, 32px); margin-top: 2px; }
+  .title .subtitle { font-size: 11px; letter-spacing: 6px; color: rgba(255,255,255,0.55); margin-top: 6px; }
+
+  /* Inputs */
+  .panel {
+    background: rgba(0,0,0,0.4);
+    border: 1px solid rgba(255,215,110,0.2);
+    border-radius: 16px;
+    padding: 18px; margin-bottom: 12px;
+    backdrop-filter: blur(8px);
+  }
+  .panel h2 { margin: 0 0 10px; font-size: 13px; letter-spacing: 3px; color: #ffd76e; font-weight: 600; }
+  .panel input {
+    width: 100%;
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 10px;
+    padding: 12px 14px;
+    color: #fff; font-size: 16px; outline: none;
+    transition: all .2s;
+  }
+  .panel input:focus { border-color: #ffd76e; background: rgba(255,255,255,0.12); }
+  .panel input + input { margin-top: 8px; }
+
+  /* Buttons */
+  .btn {
+    width: 100%;
+    border: none; border-radius: 14px;
+    padding: 16px;
+    font-size: 16px; font-weight: 700; letter-spacing: 4px;
+    cursor: pointer; transition: transform .1s;
+  }
+  .btn:active { transform: translateY(2px); }
+  .btn:disabled { opacity: .35; cursor: not-allowed; }
+  .btn-primary {
+    background: linear-gradient(180deg, #ffd76e 0%, #c69234 100%);
+    color: #1a0f00;
+    box-shadow: 0 6px 18px rgba(198,146,52,0.4);
+  }
+  .btn-ghost {
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.25);
+    color: #fff;
+    letter-spacing: 2px;
+  }
+  .btn + .btn { margin-top: 10px; }
+
+  /* ---------- Lobby player list ---------- */
+  .room-info {
+    text-align: center; margin: 12px 0 18px;
+    font-size: 11px; letter-spacing: 4px; color: rgba(255,255,255,0.55);
+  }
+  .room-code {
+    display: inline-block; margin-top: 4px;
+    font-family: 'Inter', system-ui, monospace;
+    font-size: 30px; font-weight: 900; letter-spacing: 6px;
+    color: #ffd76e;
+  }
+  .player-list { display: flex; flex-direction: column; gap: 8px; }
+  .player-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 14px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px;
+  }
+  .player-row.you { background: rgba(255,215,110,0.12); border-color: rgba(255,215,110,0.4); }
+  .player-row .name { font-weight: 700; }
+  .player-row .badge {
+    font-size: 10px; padding: 3px 8px; border-radius: 999px;
+    background: rgba(255,255,255,0.12); letter-spacing: 1px;
+  }
+  .player-row.host .badge { background: rgba(255,215,110,0.3); color: #ffd76e; }
+  .player-row.decided { background: rgba(80,255,150,0.1); border-color: rgba(80,255,150,0.3); }
+
+  /* ---------- Countdown ---------- */
+  .countdown-screen { align-items: center; justify-content: center; text-align: center; }
+  .countdown-instruction {
+    font-size: 17px; line-height: 1.6;
+    color: rgba(255,255,255,0.85); margin-bottom: 28px;
+    letter-spacing: 1px;
+  }
+  .countdown-instruction strong {
+    color: #ffd76e; font-size: 21px; display: block; margin-bottom: 6px;
+  }
+  .countdown-number {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: clamp(120px, 30vw, 200px);
+    font-weight: 900; line-height: 1;
+    background: linear-gradient(180deg, #ffd76e, #c69234);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    text-shadow: 0 0 60px rgba(255,215,110,0.4);
+    letter-spacing: -0.05em;
+  }
+
+  /* ---------- Decision ---------- */
+  .decision-screen {
+    align-items: center; justify-content: flex-start; text-align: center;
+    padding: 12px 12px 16px;
+  }
+  .decision-timer {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 56px; font-weight: 900; line-height: 1;
+    background: linear-gradient(180deg, #ffd76e, #c69234);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    text-shadow: 0 0 30px rgba(255,215,110,0.4);
+    margin-bottom: 10px; letter-spacing: -0.04em;
+    transition: color 0.2s;
+  }
+  .decision-timer.urgent {
+    background: linear-gradient(180deg, #ff5050, #c41e1e);
+    -webkit-background-clip: text; background-clip: text;
+    text-shadow: 0 0 30px rgba(255,80,80,0.6);
+    animation: pulse 0.5s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.08); }
+  }
+  .section-label {
+    font-size: 10px; letter-spacing: 4px;
+    color: rgba(255,255,255,0.55);
+    margin: 6px 0 6px;
+    text-transform: uppercase;
+  }
+  .decision-board {
+    display: flex; justify-content: center; gap: 5px;
+    flex-wrap: nowrap;
+    padding: 10px 8px;
+    background: rgba(0,0,0,0.3);
+    border-radius: 12px;
+    border: 1px solid rgba(255,215,110,0.22);
+    margin-bottom: 12px;
+    width: 100%;
+  }
+  .community-card { aspect-ratio: 5/7; flex-shrink: 0; }
+  .decision-board .community-card { width: calc((100% - 8 * 5px) / 7); max-width: 64px; }
+  .hole-pair {
+    display: flex; gap: 10px;
+    width: 100%; justify-content: center;
+    padding: 0 12%;
+    margin-bottom: 22px;
+  }
+  .hole-card-wrap { width: 32%; aspect-ratio: 5 / 7; max-width: 130px; perspective: 800px; }
+  .decision-buttons { display: flex; gap: 14px; width: 100%; max-width: 380px; }
+  .decision-buttons button {
+    flex: 1;
+    padding: 26px 12px;
+    font-size: 19px; font-weight: 900; letter-spacing: 3px;
+    border: none; border-radius: 16px;
+    cursor: pointer; transition: transform .1s;
+  }
+  .decision-buttons button:active { transform: scale(0.96); }
+  .btn-fight {
+    background: linear-gradient(180deg, #ff5050 0%, #c41e1e 100%);
+    color: #fff;
+    box-shadow: 0 6px 18px rgba(196,30,30,0.5);
+  }
+  .btn-fold {
+    background: linear-gradient(180deg, #6f6f7a 0%, #404048 100%);
+    color: #fff;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.4);
+  }
+  .decision-status {
+    margin-top: 22px;
+    font-size: 12px; color: rgba(255,255,255,0.55); letter-spacing: 2px;
+  }
+  .decision-locked {
+    font-size: 22px; color: #ffd76e; font-weight: 700; letter-spacing: 4px;
+    margin-bottom: 6px;
+  }
+
+  /* ---------- Reveal ---------- */
+  .reveal-screen { padding-top: 4px; }
+  .verdict-banner {
+    text-align: center; padding: 12px;
+    background: linear-gradient(90deg, transparent, rgba(255,215,110,0.18), transparent);
+    border-top: 1px solid rgba(255,215,110,0.3);
+    border-bottom: 1px solid rgba(255,215,110,0.3);
+    margin: 0 -18px 12px;
+  }
+  .verdict-banner .label { font-size: 10px; letter-spacing: 4px; color: rgba(255,255,255,0.6); }
+  .verdict-banner .winner-name {
+    font-size: 22px; font-weight: 900; color: #ffd76e; margin-top: 2px; letter-spacing: 2px;
+  }
+  .reveal-board {
+    display: flex; justify-content: center; gap: 4px;
+    flex-wrap: nowrap;
+    padding: 8px;
+    background: rgba(0,0,0,0.25);
+    border-radius: 12px;
+    border: 1px solid rgba(255,215,110,0.18);
+    margin-bottom: 12px;
+    width: 100%;
+  }
+  .reveal-board .community-card { width: 36px; }
+  .reveal-board .community-card.in-best { box-shadow: 0 0 12px rgba(255,215,110,0.6); }
+  .reveal-list { display: flex; flex-direction: column; gap: 8px; padding-bottom: 12px; }
+  .reveal-row {
+    background: rgba(0,0,0,0.3);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 12px;
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .reveal-row.winner {
+    background: rgba(255,215,110,0.15);
+    border-color: #ffd76e;
+    box-shadow: 0 0 14px rgba(255,215,110,0.3);
+  }
+  .reveal-row.drinker {
+    background: linear-gradient(90deg, rgba(255,80,80,0.30), rgba(255,80,80,0.16));
+    border-color: rgba(255,80,80,0.65);
+    box-shadow: 0 0 20px rgba(255,80,80,0.4);
+    animation: drinkPulse 1.8s ease-in-out infinite;
+  }
+  .reveal-row.fold:not(.drinker) { opacity: 0.6; }
+  @keyframes drinkPulse {
+    0%, 100% { box-shadow: 0 0 16px rgba(255,80,80,0.35); }
+    50%      { box-shadow: 0 0 28px rgba(255,80,80,0.7); }
+  }
+  .reveal-info { flex: 1; min-width: 0; }
+  .reveal-info .pname {
+    font-size: 14px; font-weight: 700; margin-bottom: 2px;
+    display: flex; gap: 6px; align-items: center;
+  }
+  .reveal-info .pname.you { color: #ffd76e; }
+  .reveal-info .pdecision {
+    font-size: 9px; padding: 2px 6px; border-radius: 999px;
+    background: rgba(255,255,255,0.1); letter-spacing: 1px; font-weight: 700;
+  }
+  .reveal-info .pdecision.fight { background: rgba(255,80,80,0.3); color: #ffb0b0; }
+  .reveal-info .pdecision.fold { background: rgba(150,150,150,0.25); color: rgba(255,255,255,0.7); }
+  .reveal-info .phand {
+    font-size: 11px; color: rgba(255,255,255,0.65); letter-spacing: 1px;
+  }
+  .reveal-cards { display: flex; gap: 4px; flex-shrink: 0; }
+  .reveal-cards .pcard { width: 38px; aspect-ratio: 5 / 7; }
+  .reveal-cards .pcard.in-best { box-shadow: 0 0 10px rgba(255,215,110,0.55); border-radius: 7px; }
+  .reveal-row .pdrinks {
+    flex-shrink: 0;
+    font-size: 13px; font-weight: 800;
+    padding: 4px 8px; border-radius: 6px;
+    background: rgba(255,255,255,0.08);
+    color: rgba(255,255,255,0.7);
+    min-width: 60px; text-align: center;
+  }
+  .reveal-row .pdrinks.heavy {
+    font-size: 16px; font-weight: 900;
+    padding: 7px 12px;
+    background: linear-gradient(180deg, #ff5050, #c41e1e);
+    color: #fff;
+    letter-spacing: 1px;
+    box-shadow: 0 4px 14px rgba(196,30,30,0.45), inset 0 1px 0 rgba(255,255,255,0.18);
+    text-shadow: 0 1px 0 rgba(0,0,0,0.4);
+  }
+  .reveal-row .pdrinks.win { background: rgba(80,255,150,0.18); color: #98e8a8; }
+
+  /* ---------- Drink banner ---------- */
+  .drink-banner {
+    display: flex; align-items: center; justify-content: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: linear-gradient(90deg,
+      rgba(255,80,80,0.05) 0%,
+      rgba(255,80,80,0.30) 50%,
+      rgba(255,80,80,0.05) 100%);
+    border: 1px solid rgba(255,80,80,0.5);
+    border-radius: 10px;
+    margin-bottom: 12px;
+    box-shadow: 0 0 16px rgba(255,80,80,0.25);
+  }
+  .drink-banner .label {
+    font-size: 10px; letter-spacing: 4px;
+    color: rgba(255,255,255,0.6);
+    flex-shrink: 0;
+  }
+  .drink-banner .drinker-text {
+    font-size: 18px; font-weight: 900;
+    color: #ff8a8a;
+    letter-spacing: 1.5px;
+    text-shadow: 0 0 12px rgba(255,80,80,0.45);
+    line-height: 1.3;
+    text-align: center;
+  }
+  .drink-banner.no-drinkers .drinker-text { color: rgba(255,255,255,0.55); }
+
+  /* ---------- Card design ---------- */
+  .card {
+    position: relative; width: 100%; height: 100%;
+    transform-style: preserve-3d;
+    transition: transform .8s cubic-bezier(.4,1.4,.55,1);
+    will-change: transform;
+  }
+  .card.flipped { transform: rotateY(180deg); }
+  .card.deal-in { animation: dealIn .5s cubic-bezier(.3,1.3,.5,1); }
+  @keyframes dealIn {
+    from { transform: scale(0.7) rotateZ(-8deg); opacity: 0; }
+    to   { transform: scale(1) rotateZ(0); opacity: 1; }
+  }
+  .card-face {
+    position: absolute; inset: 0;
+    border-radius: 8px;
+    backface-visibility: hidden; -webkit-backface-visibility: hidden;
+    overflow: hidden;
+    box-shadow: 0 8px 22px rgba(0,0,0,0.55), 0 2px 6px rgba(0,0,0,0.35), 0 0 0 1px rgba(0,0,0,0.5);
+  }
+  .card-back {
+    background:
+      radial-gradient(circle at 50% 35%, rgba(255,200,200,0.18), transparent 60%),
+      linear-gradient(135deg, #a0182a 0%, #6b0d18 55%, #3d0610 100%);
+    border: 3px solid #fdfaf0;
+  }
+  .card-back::before {
+    content: ""; position: absolute; inset: 3px;
+    border: 1px solid rgba(255,215,110,0.55);
+    border-radius: 4px;
+    background-image:
+      repeating-linear-gradient(45deg, transparent 0 6px, rgba(255,215,110,0.08) 6px 7px),
+      repeating-linear-gradient(-45deg, transparent 0 6px, rgba(255,215,110,0.08) 6px 7px);
+  }
+  .card-front {
+    background: linear-gradient(180deg, #fefdf6 0%, #f6efd9 100%);
+    transform: rotateY(180deg);
+    color: #0a0a0a;
+  }
+  .card-front::before {
+    content: ""; position: absolute; inset: 0;
+    background: radial-gradient(ellipse at 18% 14%, rgba(255,255,255,0.5) 0%, transparent 55%);
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.07);
+    border-radius: inherit;
+    pointer-events: none;
+  }
+  .card-front.red   { color: #d61e2e; }
+  .card-front.black { color: #0a0a0a; }
+  .corner {
+    position: absolute;
+    display: flex; flex-direction: column; align-items: center;
+    line-height: 0.82;
+    font-family: 'Inter', 'Helvetica Neue', system-ui, sans-serif;
+    font-weight: 800; letter-spacing: -0.05em;
+  }
+  .corner.tl { top: 5%; left: 7%; }
+  .corner.br { bottom: 5%; right: 7%; transform: rotate(180deg); }
+  .corner .rank { line-height: 0.82; }
+  .corner .suit-mini { line-height: 1; margin-top: 0.04em; opacity: 0.95; }
+
+  .center-ace {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    line-height: 1;
+  }
+  .center-face {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    font-family: 'Georgia', serif; font-weight: 900;
+    letter-spacing: -0.04em; line-height: 1;
+  }
+  .face-letter { line-height: 0.88; }
+  .face-suit { font-size: 0.42em; line-height: 1; opacity: 0.88; margin-top: 0.08em; }
+
+  /* Container-query based font sizing — every card auto-scales to its
+     own container's width, so suits never overlap regardless of size. */
+  .community-card,
+  .hole-card-wrap,
+  .pcard {
+    container-type: inline-size;
+  }
+  .card .corner .rank { font-size: 24cqw; }
+  .card .corner .suit-mini { font-size: 20cqw; }
+  .card .center-ace { font-size: 70cqw; }
+  .card .center-face { font-size: 52cqw; }
+
+  /* Status text */
+  .status-line {
+    text-align: center; margin: 6px 0 14px;
+    font-size: 11px; letter-spacing: 3px; color: rgba(255,255,255,0.55);
+  }
+  .footer-actions { margin-top: auto; padding-top: 12px; }
+
+  /* ---------- Rules overlay ---------- */
+  .rules-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    display: none;
+    align-items: flex-start;
+    justify-content: center;
+    background: rgba(0,0,0,0.85);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    padding: 32px 18px;
+    overflow-y: auto;
+    cursor: pointer;
+  }
+  .rules-overlay.show { display: flex; }
+  .rules-card {
+    background: linear-gradient(180deg, #1a4a28, #0a3018);
+    border: 1px solid rgba(240,200,80,0.4);
+    border-radius: 14px;
+    padding: 22px 20px 14px;
+    max-width: 460px;
+    width: 100%;
+    box-shadow: 0 24px 50px rgba(0,0,0,0.6);
+    cursor: default;
+  }
+  .rules-card h2 {
+    font-size: 15px;
+    letter-spacing: 6px;
+    color: #ffd76e;
+    text-align: center;
+    margin: 0 0 16px;
+    font-weight: 800;
+  }
+  .rules-card dl {
+    font-size: 13px;
+    line-height: 1.7;
+    font-family: -apple-system, "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+    letter-spacing: 0.04em;
+  }
+  .rules-card dt {
+    font-weight: 700;
+    color: #ffd76e;
+    margin-top: 14px;
+    letter-spacing: 2px;
+    font-size: 12px;
+  }
+  .rules-card dt:first-child { margin-top: 0; }
+  .rules-card dd {
+    padding-left: 10px;
+    color: rgba(255,255,255,0.88);
+    margin-bottom: 2px;
+  }
+  .rules-card dd b { color: #ffd76e; font-weight: 700; }
+  .rules-card .ranks {
+    margin-top: 4px;
+    padding: 8px 10px;
+    background: rgba(0,0,0,0.3);
+    border: 1px solid rgba(240,200,80,0.18);
+    border-radius: 8px;
+    font-size: 11px;
+    line-height: 1.6;
+    letter-spacing: 0.05em;
+  }
+  .rules-card .close-hint {
+    margin-top: 14px;
+    text-align: center;
+    font-size: 10px;
+    letter-spacing: 4px;
+    color: rgba(255,255,255,0.5);
+    animation: blink 1.6s ease-in-out infinite;
+  }
+
+  /* link-style button */
+  .btn-link-text {
+    display: block;
+    width: 100%;
+    margin-top: 12px;
+    background: transparent;
+    border: none;
+    color: rgba(255,215,110,0.7);
+    font-family: inherit;
+    font-size: 13px;
+    letter-spacing: 4px;
+    cursor: pointer;
+    padding: 8px;
+    text-decoration: underline;
+    text-underline-offset: 4px;
+  }
+  .btn-link-text:active { color: #ffd76e; }
+
+  /* Version tag — small, faint, bottom-of-screen so the deployed build is
+     visible at a glance without competing with the UI. */
+  .version-tag {
+    margin-top: 14px;
+    text-align: center;
+    font-size: 10px;
+    letter-spacing: 3px;
+    color: rgba(255,255,255,0.35);
+    font-family: 'Inter', system-ui, monospace;
+  }
+  .version-corner {
+    position: fixed; bottom: 6px; right: 10px;
+    z-index: 50;
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: rgba(255,255,255,0.3);
+    font-family: 'Inter', system-ui, monospace;
+    pointer-events: none;
+  }
+
+  /* Toast */
+  .toast {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: rgba(255,80,80,0.95); color: #fff;
+    padding: 12px 20px; border-radius: 10px;
+    font-size: 14px; z-index: 1000;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.4);
+    opacity: 0; pointer-events: none; transition: opacity .25s;
+  }
+  .toast.show { opacity: 1; }
+
+  @media (max-width: 380px) {
+    .decision-board { gap: 3px; padding: 8px 6px; }
+    .decision-board .community-card { max-width: none; }
+    .hole-pair { padding: 0 6%; gap: 8px; }
+    .hole-card-wrap { width: 38%; }
+    .reveal-board .community-card { width: 32px; }
+    .reveal-cards .pcard { width: 32px; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ===== ENTER ===== -->
+  <div class="screen active" id="enterScreen">
+    <div class="title">
+      <h1>SPRINT</h1>
+      <h1 class="sub">POKER</h1>
+      <div class="subtitle">3 MIN · SHORT DECK</div>
+    </div>
+    <div class="panel">
+      <h2>あなたの名前</h2>
+      <input id="nameInput" type="text" placeholder="プレイヤー名" maxlength="12" autocomplete="off">
+    </div>
+    <div class="panel">
+      <h2>ルームコード</h2>
+      <input id="roomInput" type="text" placeholder="既存ルームのコードを入力（既定値は新規ルーム）" maxlength="6" autocomplete="off" style="text-transform:uppercase;letter-spacing:2px;">
+    </div>
+    <button class="btn btn-primary" id="enterBtn">JOIN</button>
+    <button class="btn-link-text" id="rulesBtn">ルールを見る</button>
+    <div class="version-tag">v0.1.0 · sprint</div>
+  </div>
+
+  <!-- ===== RULES OVERLAY ===== -->
+  <div class="rules-overlay" id="rulesOverlay">
+    <div class="rules-card" id="rulesCard">
+      <h2>RULES</h2>
+      <dl>
+        <dt>SHORT DECK</dt>
+        <dd>使用カードは <b>8・9・10・J・Q・K・A の28枚のみ</b>。<br>強い役が出やすく、判断が一瞬で決まる。</dd>
+
+        <dt>進行</dt>
+        <dd>各自スマホで同じルームコードに JOIN。ロビーで全員揃ったらホストが START。</dd>
+
+        <dt>配り</dt>
+        <dd>自分の手札 <b>2枚</b>（自分だけ見える）と、場の共通カード <b>7枚</b>（全員見える）。</dd>
+
+        <dt>判断（15秒）</dt>
+        <dd>共通7枚＋自分の手札2枚を見て <b>勝負</b> か <b>フォールド</b> を選ぶ。<br>時間切れは <b>自動フォールド</b>。</dd>
+
+        <dt>勝者</dt>
+        <dd>勝負した人のうち、9枚（手札2＋場7）から作れる <b>最強の5枚役</b> を持つ人が勝ち。</dd>
+
+        <dt>飲み杯数</dt>
+        <dd>勝負して <b>負けた人</b> → 勝負した人数 × 1杯</dd>
+        <dd>勝負して <b>勝った人</b> → 0杯</dd>
+        <dd>フォールドした人 → 1杯</dd>
+        <dd>全員フォールド → 全員 1杯</dd>
+
+        <dt>役の強さ（強→弱）</dt>
+        <dd class="ranks">
+          ロイヤルフラッシュ → ストレートフラッシュ → フォーカード → <b>フラッシュ</b> → フルハウス → <b>スリーカード</b> → ストレート → ツーペア → ワンペア → ハイカード
+        </dd>
+        <dd style="opacity:.65; font-size:11px; letter-spacing:1px; margin-top:6px;">
+          ※ ショートデッキ仕様: <b>フラッシュ &gt; フルハウス</b> / <b>スリーカード &gt; ストレート</b>。<br>
+          ストレートのホイールは <b>A-8-9-10-J</b>（最弱のストレート）。
+        </dd>
+      </dl>
+      <div class="close-hint">タップで閉じる</div>
+    </div>
+  </div>
+
+  <!-- ===== LOBBY ===== -->
+  <div class="screen" id="lobbyScreen">
+    <div class="room-info">
+      ROOM CODE
+      <div class="room-code" id="roomCodeDisplay">------</div>
+    </div>
+    <div class="panel">
+      <h2>プレイヤー <span id="playerCountLabel" style="opacity:.7"></span></h2>
+      <div class="player-list" id="lobbyPlayerList"></div>
+    </div>
+    <div class="status-line" id="lobbyStatus"></div>
+    <div class="footer-actions">
+      <button class="btn btn-primary" id="startBtn" style="display:none">START</button>
+      <button class="btn btn-ghost" id="leaveBtn">退出</button>
+    </div>
+  </div>
+
+  <!-- ===== DECISION ===== -->
+  <div class="screen decision-screen" id="decisionScreen">
+    <div class="decision-timer" id="decisionTimer">15</div>
+    <div class="section-label">場のカード</div>
+    <div class="decision-board" id="decisionCommunity"></div>
+    <div class="section-label">あなたの手札</div>
+    <div class="hole-pair" id="holePair"></div>
+    <div class="decision-buttons" id="decisionButtons">
+      <button class="btn-fight" data-choice="fight">勝負</button>
+      <button class="btn-fold" data-choice="fold">フォールド</button>
+    </div>
+    <div class="decision-locked" id="decisionLocked" style="display:none">DECIDED</div>
+    <div class="decision-status" id="decisionStatus"></div>
+  </div>
+
+  <!-- ===== REVEAL ===== -->
+  <div class="screen reveal-screen" id="revealScreen">
+    <div class="verdict-banner">
+      <div class="label">WINNER</div>
+      <div class="winner-name" id="winnerName">-</div>
+    </div>
+    <div class="drink-banner" id="drinkBanner">
+      <div class="label">飲む</div>
+      <div class="drinker-text" id="drinkerText">—</div>
+    </div>
+    <div class="reveal-board" id="revealCommunity"></div>
+    <div class="reveal-list" id="revealList"></div>
+    <div class="footer-actions">
+      <button class="btn btn-primary" id="nextBtn" style="display:none">NEXT ROUND</button>
+      <button class="btn btn-ghost" id="leaveBtn2">退出</button>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+<div class="version-corner">v1.1.0</div>
+
+<script>
+"use strict";
+
+// ===== State =====
+const PHASES = {
+  LOBBY: "lobby", DECISION: "decision", REVEAL: "reveal",
+};
+const STORAGE_KEY = "sprint_v1";
+let ws = null;
+let serverState = null;
+let myInfo = { name: "", room: "" };
+let timerInterval = null;
+let manualClose = false;     // user pressed disconnect — don't auto-reconnect
+let reconnectTimer = null;
+let reconnectAttempts = 0;
+const MAX_RECONNECT = 6;
+// Decision messages are stashed here when the user clicks while the socket
+// isn't OPEN (mid-reconnect). The most recent stash is flushed as soon as a
+// new socket opens, so a click made during a brief blip isn't lost.
+let pendingDecision = null;
+// Heartbeat — detects "silent dead" sockets where the browser still reports
+// readyState === OPEN but no traffic actually flows. If we don't see ANY
+// message from the server within HEARTBEAT_TIMEOUT_MS, we force a reconnect.
+let heartbeatTimer = null;
+let lastServerMessageAt = 0;
+const HEARTBEAT_INTERVAL_MS = 5_000;
+const HEARTBEAT_TIMEOUT_MS = 20_000;
+// Cache the rendered card identity to avoid re-creating DOM nodes (and
+// re-running deal-in animations) when only decision/timer state changes.
+let lastCommunityKey = "";
+let lastHoleKey = "";
+let lastRevealKey = "";
+
+// Screen Wake Lock — keep the display on during a session. Auto-released
+// when the tab is hidden; we re-acquire on visibilitychange.
+let wakeLock = null;
+async function requestWakeLock() {
+  if (!("wakeLock" in navigator)) return;
+  try {
+    wakeLock = await navigator.wakeLock.request("screen");
+    wakeLock.addEventListener("release", () => { wakeLock = null; });
+  } catch {
+    /* user denied or browser blocked — silent */
+  }
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") return;
+  if (!wakeLock && ws) requestWakeLock();
+  // iOS/Android often kill background WebSockets without firing close on
+  // resume. If we have an active session but the socket is in a non-OPEN
+  // state, kick off a reconnect.
+  if (myInfo.room && myInfo.name && !manualClose) {
+    if (!ws || ws.readyState === WebSocket.CLOSING || ws.readyState === WebSocket.CLOSED) {
+      forceReconnect("resume");
+    }
+  }
+});
+
+function forceReconnect(reason) {
+  if (manualClose) return;
+  if (reconnectTimer) return; // a reconnect is already scheduled
+  // Drop the old socket (if any). Null `ws` here so any late close event from
+  // it sees `ws !== sock` in its handler and stays silent — that prevents a
+  // double reconnect.
+  if (ws) {
+    const old = ws;
+    ws = null;
+    try { old.close(4001, reason || "forced"); } catch {}
+  }
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    connect(myInfo.name, myInfo.room);
+  }, 200);
+}
+
+// Stable per-browser-profile id. Same id across tabs in the same browser
+// profile, so two tabs can't double-occupy a seat.
+function getOrCreateClientId() {
+  const KEY = "sprint_clientId_v1";
+  let id = "";
+  try { id = localStorage.getItem(KEY) || ""; } catch {}
+  if (!/^[A-Za-z0-9-]{8,64}$/.test(id)) {
+    id = (crypto && crypto.randomUUID) ? crypto.randomUUID()
+      : Array.from({length: 32}, () => "0123456789abcdef"[Math.floor(Math.random()*16)]).join("");
+    try { localStorage.setItem(KEY, id); } catch {}
+  }
+  return id;
+}
+const CLIENT_ID = getOrCreateClientId();
+
+const FUNNY_NAMES = [
+  "酒豪", "ザル", "ベロベロ", "ほろ酔い", "下戸", "二日酔い", "顔面紅葉", "記憶喪失",
+  "翌日後悔", "終電マン", "ウーロン茶", "一気のヌシ", "顔面真っ赤", "介錯人", "ノンアル王", "酔拳",
+];
+function randomFunnyName() {
+  return FUNNY_NAMES[Math.floor(Math.random() * FUNNY_NAMES.length)];
+}
+// Room code: 5-char A-Z/2-9, no 0/1/I/L/O so visually unambiguous when shared.
+function randomRoomCode() {
+  const A = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+  return Array.from({ length: 5 }, () => A[Math.floor(Math.random() * A.length)]).join("");
+}
+try {
+  const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+  document.getElementById("nameInput").value = saved.name || randomFunnyName();
+} catch {
+  document.getElementById("nameInput").value = randomFunnyName();
+}
+// Pre-fill room code with a fresh random per visit. The user can clear it
+// to type someone else's code instead.
+document.getElementById("roomInput").value = randomRoomCode();
+
+// ===== DOM helpers =====
+function $(id) { return document.getElementById(id); }
+function showScreen(name) {
+  const target = $(name + "Screen");
+  // No-op if we're already on this screen — avoids flicker from re-toggling active.
+  if (target.classList.contains("active")) return;
+  document.querySelectorAll(".screen").forEach(el => el.classList.remove("active"));
+  target.classList.add("active");
+}
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+  }[c]));
+}
+function showToast(msg, ms = 2500) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), ms);
+}
+
+// ===== Card rendering =====
+// Simple design: corner rank/suit + a single big center suit (or face letter
+// for J/Q/K). Avoids pip-overlap issues at small sizes on mobile.
+function centerHTML(card) {
+  const r = card.label, s = card.suit.sym;
+  if (["J","Q","K"].includes(r)) {
+    return `<div class="center-face"><span class="face-letter">${r}</span><span class="face-suit">${s}</span></div>`;
+  }
+  return `<div class="center-ace">${s}</div>`;
+}
+function cardHTML(card, options = {}) {
+  if (!card) {
+    return `<div class="card ${options.flipped ? "" : "flipped"}">
+      <div class="card-face card-back"></div>
+      <div class="card-face card-front"></div>
+    </div>`;
+  }
+  const colorClass = card.suit.color;
+  const flipped = options.flipped !== false;
+  return `
+    <div class="card ${flipped ? "flipped" : ""} ${options.dealIn ? "deal-in" : ""}">
+      <div class="card-face card-back"></div>
+      <div class="card-face card-front ${colorClass}">
+        <div class="corner tl"><div class="rank">${card.label}</div><div class="suit-mini">${card.suit.sym}</div></div>
+        ${centerHTML(card)}
+        <div class="corner br"><div class="rank">${card.label}</div><div class="suit-mini">${card.suit.sym}</div></div>
+      </div>
+    </div>
+  `;
+}
+
+function cardKey(c) { return c ? `${c.v}-${c.suit.sym}` : ""; }
+
+// ===== Connection =====
+function connect(name, room) {
+  myInfo.name = name; myInfo.room = room;
+  manualClose = false;
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ name })); } catch {}
+
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  const url = `${proto}://${location.host}/ws`
+    + `?room=${encodeURIComponent(room)}`
+    + `&name=${encodeURIComponent(name)}`
+    + `&clientId=${encodeURIComponent(CLIENT_ID)}`;
+  // Capture the socket in a local — handlers reference `sock`, not the global
+  // `ws`, so a late close event from a stale socket can't clobber a newer one.
+  const sock = new WebSocket(url);
+  ws = sock;
+  sock.addEventListener("open", () => {
+    if (ws !== sock) return; // already replaced — ignore
+    reconnectAttempts = 0;
+    lastServerMessageAt = Date.now();
+    startHeartbeat();
+    $("roomCodeDisplay").textContent = room;
+    // If the user clicked 勝負/フォールド while we were disconnected, send it
+    // now so the click isn't lost.
+    if (pendingDecision) {
+      const choice = pendingDecision;
+      pendingDecision = null;
+      try { sock.send(JSON.stringify({ type: "decision", choice })); } catch {}
+    }
+    // Don't force-show lobby — onStateUpdate will pick the right screen
+    // based on the server-reported phase (covers mid-game reconnect).
+  });
+  sock.addEventListener("message", (e) => {
+    if (ws !== sock) return; // stale socket — ignore
+    lastServerMessageAt = Date.now();
+    let msg;
+    try { msg = JSON.parse(e.data); } catch { return; }
+    if (msg.type === "state") {
+      serverState = msg.state;
+      onStateUpdate();
+    }
+  });
+  sock.addEventListener("close", (e) => {
+    // Only mutate global state if THIS socket is still the current one — a
+    // stale close (e.g. arriving after a fast reconnect already replaced ws)
+    // must not clobber a healthy newer socket.
+    const isCurrent = ws === sock;
+    if (isCurrent) {
+      cleanupTimers();
+      stopHeartbeat();
+      ws = null;
+    }
+
+    // Replaced by another tab on the same device — don't reconnect
+    if (e.code === 4002) {
+      if (isCurrent) {
+        manualClose = true;
+        reconnectAttempts = 0;
+        pendingDecision = null;
+        showToast("別のタブで開かれました");
+        showScreen("enter");
+      }
+      return;
+    }
+    // Hard rejections — server said no (room full / game in progress / bad input)
+    if (e.code === 4030 || e.code === 4023 || e.code === 1008) {
+      if (isCurrent) {
+        manualClose = true;
+        reconnectAttempts = 0;
+        pendingDecision = null;
+        showToast(e.code === 4030 ? "ルームが満員です"
+          : e.code === 4023 ? "ゲームが進行中で参加できません"
+          : "ルームに入れませんでした");
+        showScreen("enter");
+      }
+      return;
+    }
+    // User-initiated close
+    if (manualClose) {
+      if (isCurrent) {
+        reconnectAttempts = 0;
+        pendingDecision = null;
+        showScreen("enter");
+      }
+      return;
+    }
+    // Auto-reconnect (network blip, server restart) — server preserves the
+    // seat for ~15s on disconnect, so the player picks up where they were.
+    // Only the current socket schedules reconnects; a stale close is silent.
+    if (isCurrent && myInfo.room && myInfo.name && reconnectAttempts < MAX_RECONNECT) {
+      reconnectAttempts++;
+      const backoff = Math.min(500 * Math.pow(2, reconnectAttempts - 1), 4000);
+      showToast(`再接続中... (${reconnectAttempts}/${MAX_RECONNECT})`);
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        connect(myInfo.name, myInfo.room);
+      }, backoff);
+      return;
+    }
+    if (isCurrent) {
+      showToast("接続が切れました");
+      pendingDecision = null;
+      showScreen("enter");
+      reconnectAttempts = 0;
+    }
+  });
+  sock.addEventListener("error", () => {
+    // close handler will fire next — let it decide whether to reconnect
+  });
+}
+
+function send(msg) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(msg));
+    return true;
+  }
+  return false;
+}
+
+// Periodically ping the server and verify a response arrived. If we don't
+// hear ANY message back for HEARTBEAT_TIMEOUT_MS, the socket is silently dead
+// even though readyState may still report OPEN — force a reconnect.
+function startHeartbeat() {
+  stopHeartbeat();
+  heartbeatTimer = setInterval(() => {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    try { ws.send(JSON.stringify({ type: "ping" })); } catch {}
+    if (Date.now() - lastServerMessageAt > HEARTBEAT_TIMEOUT_MS) {
+      forceReconnect("heartbeat-timeout");
+    }
+  }, HEARTBEAT_INTERVAL_MS);
+}
+function stopHeartbeat() {
+  if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
+}
+
+function disconnect() {
+  manualClose = true;
+  reconnectAttempts = 0;
+  pendingDecision = null;
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  stopHeartbeat();
+  if (ws) { try { ws.close(1000, "user disconnect"); } catch {} ws = null; }
+  if (wakeLock) { try { wakeLock.release(); } catch {} wakeLock = null; }
+  cleanupTimers();
+  showScreen("enter");
+}
+
+// ===== State handler =====
+function onStateUpdate() {
+  if (!serverState) return;
+  const phase = serverState.phase;
+  // Reset card-identity cache when leaving the decision/reveal phases so that
+  // cards are freshly rendered (with deal-in animation) on the next round.
+  if (phase !== PHASES.DECISION) {
+    lastCommunityKey = "";
+    lastHoleKey = "";
+  }
+  if (phase !== PHASES.REVEAL) {
+    lastRevealKey = "";
+  }
+  switch (phase) {
+    case PHASES.LOBBY: renderLobby(); break;
+    case PHASES.DECISION: renderDecision(); break;
+    case PHASES.REVEAL: renderReveal(); break;
+  }
+}
+
+// ===== Lobby =====
+function renderLobby() {
+  showScreen("lobby");
+  cleanupTimers();
+  const players = serverState.players || [];
+  $("playerCountLabel").textContent = `(${players.length}/8)`;
+  $("lobbyPlayerList").innerHTML = players.map(p => `
+    <div class="player-row ${p.isYou ? "you" : ""} ${p.id === serverState.hostId ? "host" : ""}">
+      <span class="name">${escapeHtml(p.name)}${p.isYou ? " (あなた)" : ""}</span>
+      <span class="badge">${p.id === serverState.hostId ? "HOST" : ""}${p.drinkCount > 0 ? " · " + p.drinkCount + "杯" : ""}</span>
+    </div>
+  `).join("");
+
+  const isHost = serverState.you === serverState.hostId;
+  const startBtn = $("startBtn");
+  const status = $("lobbyStatus");
+  if (isHost) {
+    startBtn.style.display = "";
+    if (players.length < 2) {
+      startBtn.disabled = true;
+      status.textContent = "もう1人以上の参加を待っています";
+    } else {
+      startBtn.disabled = false;
+      status.textContent = "全員揃ったらSTART";
+    }
+  } else {
+    startBtn.style.display = "none";
+    status.textContent = "ホストの開始を待っています";
+  }
+}
+
+// ===== Decision =====
+function renderDecision() {
+  showScreen("decision");
+  cleanupTimers();
+
+  // community cards — only re-render DOM if the dealt cards actually changed
+  const community = serverState.community || [];
+  const communityKey = community.map(c => `${c.v}-${c.suit.sym}`).join(",");
+  if (communityKey !== lastCommunityKey) {
+    $("decisionCommunity").innerHTML = community.map(c =>
+      `<div class="community-card">${cardHTML(c, { flipped: true })}</div>`
+    ).join("");
+    lastCommunityKey = communityKey;
+  }
+
+  // your own hole cards — only re-render DOM if dealt cards changed
+  const hole = serverState.myHole || [];
+  const holeKey = hole.map(c => `${c.v}-${c.suit.sym}`).join(",");
+  if (holeKey !== lastHoleKey) {
+    if (hole.length === 2) {
+      $("holePair").innerHTML = hole.map(c =>
+        `<div class="hole-card-wrap">${cardHTML(c, { flipped: true, dealIn: true })}</div>`
+      ).join("");
+    } else {
+      $("holePair").innerHTML = "";
+    }
+    lastHoleKey = holeKey;
+  }
+
+  // these can change on every state update without affecting cards
+  const me = (serverState.players || []).find(p => p.isYou);
+  const decided = me && me.decided;
+  $("decisionButtons").style.display = decided ? "none" : "";
+  $("decisionLocked").style.display = decided ? "" : "none";
+
+  const totalPlayers = serverState.players.length;
+  const decidedCount = serverState.players.filter(p => p.decided).length;
+  $("decisionStatus").textContent = `決定: ${decidedCount} / ${totalPlayers} 人`;
+
+  // 15-second countdown — auto-fold handled server-side on timeout
+  const timer = $("decisionTimer");
+  const update = () => {
+    if (!serverState.phaseEndAt) {
+      timer.textContent = "—";
+      timer.classList.remove("urgent");
+      return;
+    }
+    const remain = Math.max(0, Math.ceil((serverState.phaseEndAt - Date.now()) / 1000));
+    timer.textContent = remain;
+    timer.classList.toggle("urgent", remain <= 5);
+  };
+  update();
+  timerInterval = setInterval(update, 250);
+}
+
+// ===== Reveal =====
+function renderReveal() {
+  showScreen("reveal");
+  cleanupTimers();
+  const result = serverState.result || {};
+  const players = serverState.players;
+  const community = serverState.community || [];
+
+  // Build a key that captures the full reveal state. If unchanged, skip
+  // re-rendering DOM (avoids cards "flashing" if the room re-broadcasts).
+  const revealKey = JSON.stringify({
+    community: community.map(c => `${c.v}-${c.suit.sym}`),
+    players: players.map(p => ({
+      id: p.id,
+      decision: p.decision,
+      hole: (p.hole || []).map(c => `${c.v}-${c.suit.sym}`),
+    })),
+    drinks: result.drinks || {},
+    winners: result.winners || [],
+    losers: result.losers || [],
+  });
+
+  const isHost = serverState.you === serverState.hostId;
+  $("nextBtn").style.display = isHost ? "" : "none";
+
+  if (revealKey === lastRevealKey) return;
+  lastRevealKey = revealKey;
+
+  // Winner banner
+  const winners = (result.winners || []).map(id => players.find(p => p.id === id)).filter(Boolean);
+  const winnerNames = winners.length === 0 ? "全員フォールド" : winners.map(w => w.name).join(" & ");
+  $("winnerName").textContent = winnerNames;
+
+  // Drink banner — emphasize who drinks
+  const drinkerList = players
+    .filter(p => (result.drinks?.[p.id] || 0) > 0)
+    .sort((a, b) => (result.drinks[b.id] || 0) - (result.drinks[a.id] || 0))
+    .map(p => `${p.name} ${result.drinks[p.id]}杯`);
+  const drinkBanner = $("drinkBanner");
+  if (drinkerList.length > 0) {
+    drinkBanner.classList.remove("no-drinkers");
+    $("drinkerText").textContent = drinkerList.join("　/　");
+  } else {
+    drinkBanner.classList.add("no-drinkers");
+    $("drinkerText").textContent = "誰も飲まない";
+  }
+
+  // Winning cards (community + hole) — for highlighting
+  const winnerBest = winners.length > 0 && result.bestHands && result.bestHands[winners[0].id]
+    ? result.bestHands[winners[0].id] : null;
+  const winnerCardSet = new Set();
+  if (winnerBest && winnerBest.cards) {
+    for (const c of winnerBest.cards) winnerCardSet.add(cardKey(c));
+  }
+
+  // Community
+  $("revealCommunity").innerHTML = community.map(c => {
+    const inBest = winnerCardSet.has(cardKey(c));
+    return `<div class="community-card ${inBest ? "in-best" : ""}">${cardHTML(c, { flipped: true })}</div>`;
+  }).join("");
+
+  // Player list
+  const winnerSet = new Set(result.winners || []);
+  $("revealList").innerHTML = players.map(p => {
+    const drinks = result.drinks?.[p.id] || 0;
+    const isWinner = winnerSet.has(p.id);
+    const isDrinker = drinks > 0;
+    const decision = p.decision;
+    const isFold = decision === "fold";
+    const best = result.bestHands?.[p.id];
+    const handName = best ? best.name : "";
+
+    let classes = "reveal-row";
+    if (isWinner) classes += " winner";
+    if (isDrinker) classes += " drinker";
+    if (isFold) classes += " fold";
+
+    const yourCardSet = isWinner && best && best.cards
+      ? new Set(best.cards.map(cardKey))
+      : null;
+    const cardsHtml = (p.hole || []).map(c => {
+      const inBest = yourCardSet && yourCardSet.has(cardKey(c));
+      return `<div class="pcard ${inBest ? "in-best" : ""}">${cardHTML(c, { flipped: true })}</div>`;
+    }).join("");
+
+    let drinkHtml;
+    if (isWinner) drinkHtml = `<div class="pdrinks win">勝</div>`;
+    else if (drinks > 0) drinkHtml = `<div class="pdrinks heavy">${drinks}杯</div>`;
+    else drinkHtml = `<div class="pdrinks">セーフ</div>`;
+
+    return `
+      <div class="${classes}">
+        <div class="reveal-info">
+          <div class="pname ${p.isYou ? "you" : ""}">
+            ${escapeHtml(p.name)}
+            <span class="pdecision ${decision || ""}">${decision === "fight" ? "勝負" : decision === "fold" ? "フォールド" : "-"}</span>
+          </div>
+          <div class="phand">${handName}</div>
+        </div>
+        <div class="reveal-cards">${cardsHtml}</div>
+        ${drinkHtml}
+      </div>
+    `;
+  }).join("");
+}
+
+function cleanupTimers() {
+  if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+}
+
+// ===== Event listeners =====
+$("enterBtn").addEventListener("click", () => {
+  const name = $("nameInput").value.trim();
+  let room = $("roomInput").value.trim().toUpperCase();
+  if (!name) { showToast("名前を入力してください"); return; }
+  if (!room) {
+    room = Array.from({length: 5}, () => "ABCDEFGHJKMNPQRSTUVWXYZ23456789"[Math.floor(Math.random() * 31)]).join("");
+  } else if (!/^[A-Z0-9]{4,6}$/.test(room)) {
+    showToast("ルームコードは4〜6文字の英数字");
+    return;
+  }
+  // Tap-driven user gesture — best moment to grab the screen wake lock
+  requestWakeLock();
+  connect(name, room);
+});
+
+$("startBtn").addEventListener("click", () => send({ type: "start" }));
+$("nextBtn").addEventListener("click", () => send({ type: "next" }));
+$("leaveBtn").addEventListener("click", disconnect);
+$("leaveBtn2").addEventListener("click", disconnect);
+
+// Rules overlay open/close
+$("rulesBtn").addEventListener("click", () => {
+  $("rulesOverlay").classList.add("show");
+});
+$("rulesOverlay").addEventListener("click", (e) => {
+  // close when tapping outside the card itself (or anywhere — card click is also dismissed)
+  if (e.target.closest(".rules-card") && !e.target.classList.contains("close-hint")) return;
+  $("rulesOverlay").classList.remove("show");
+});
+
+document.querySelectorAll("#decisionButtons button").forEach(b => {
+  b.addEventListener("click", () => {
+    const choice = b.dataset.choice;
+    // Optimistically lock the UI so the user sees their choice register
+    // immediately, even if the message has to wait for a reconnect.
+    $("decisionButtons").style.display = "none";
+    $("decisionLocked").style.display = "";
+    const sent = send({ type: "decision", choice });
+    if (!sent) {
+      // Socket isn't OPEN — stash the choice; it'll be flushed when the new
+      // socket opens (auto-reconnect or the user-pressed-mid-blip case).
+      pendingDecision = choice;
+      showToast("再接続待ち…決定は送信予定です", 2000);
+      // Nudge a reconnect so the message goes out as soon as possible.
+      forceReconnect("send-while-closed");
+    }
+  });
+});
+
+document.addEventListener("gesturestart", e => e.preventDefault());
+</script>
+</body>
+</html>

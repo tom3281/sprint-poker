@@ -213,6 +213,25 @@
 
   /* ---------- Reveal ---------- */
   .reveal-screen { padding-top: 4px; }
+  .round-tag {
+    text-align: center;
+    font-size: 11px; letter-spacing: 5px; font-weight: 700;
+    color: #fff;
+    padding: 6px 14px;
+    margin: 0 auto 8px;
+    width: fit-content;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #c41e1e, #ff5050);
+    box-shadow: 0 0 18px rgba(255,80,80,0.5);
+    animation: drinkPulse 1.4s ease-in-out infinite;
+  }
+  .round-tag.original {
+    background: rgba(255,215,110,0.18);
+    color: #ffd76e;
+    box-shadow: none;
+    animation: none;
+    letter-spacing: 3px;
+  }
   .verdict-banner {
     text-align: center; padding: 12px;
     background: linear-gradient(90deg, transparent, rgba(255,215,110,0.18), transparent);
@@ -247,10 +266,8 @@
     justify-content: space-between;
     gap: 8px;
   }
-  .reveal-row.winner {
-    background: rgba(255,215,110,0.15);
-    border-color: #ffd76e;
-    box-shadow: 0 0 14px rgba(255,215,110,0.3);
+  .reveal-row.spectator {
+    opacity: 0.45;
   }
   .reveal-row.drinker {
     background: linear-gradient(90deg, rgba(255,80,80,0.30), rgba(255,80,80,0.16));
@@ -574,7 +591,7 @@
     </div>
     <button class="btn btn-primary" id="enterBtn">JOIN</button>
     <button class="btn-link-text" id="rulesBtn">ルールを見る</button>
-    <div class="version-tag">v0.1.0 · sprint</div>
+    <div class="version-tag">v0.2.0 · showdown</div>
   </div>
 
   <!-- ===== RULES OVERLAY ===== -->
@@ -582,34 +599,25 @@
     <div class="rules-card" id="rulesCard">
       <h2>RULES</h2>
       <dl>
-        <dt>SHORT DECK</dt>
-        <dd>使用カードは <b>8・9・10・J・Q・K・A の28枚のみ</b>。<br>強い役が出やすく、判断が一瞬で決まる。</dd>
-
         <dt>進行</dt>
-        <dd>各自スマホで同じルームコードに JOIN。ロビーで全員揃ったらホストが START。</dd>
+        <dd>各自スマホで同じルームコードに JOIN。ロビーで全員揃ったらホストが START。判断・フォールドはなし、即ショウダウン。</dd>
 
         <dt>配り</dt>
-        <dd>自分の手札 <b>2枚</b>（自分だけ見える）と、場の共通カード <b>7枚</b>（全員見える）。</dd>
+        <dd>自分の手札 <b>2枚</b>（自分だけ見える）と、場の共通カード <b>5枚</b>（全員見える）。</dd>
 
-        <dt>判断（15秒）</dt>
-        <dd>共通7枚＋自分の手札2枚を見て <b>勝負</b> か <b>フォールド</b> を選ぶ。<br>時間切れは <b>自動フォールド</b>。</dd>
+        <dt>ショウダウン</dt>
+        <dd>7枚（手札2＋場5）から作れる <b>最強の5枚役</b> を全員自動で構成。<b>一番弱い人が飲む</b>。</dd>
 
-        <dt>勝者</dt>
-        <dd>勝負した人のうち、9枚（手札2＋場7）から作れる <b>最強の5枚役</b> を持つ人が勝ち。</dd>
+        <dt>決勝戦</dt>
+        <dd>最弱役が2人以上タイなら、その人達だけで <b>再配り</b>（場も手札もリセット）して再勝負。決まるまで繰り返す。</dd>
 
         <dt>飲み杯数</dt>
-        <dd>勝負して <b>負けた人</b> → 勝負した人数 × 1杯</dd>
-        <dd>勝負して <b>勝った人</b> → 0杯</dd>
-        <dd>フォールドした人 → 1杯</dd>
-        <dd>全員フォールド → 全員 1杯</dd>
+        <dd>負けた人 → 1杯</dd>
+        <dd>それ以外 → 0杯</dd>
 
         <dt>役の強さ（強→弱）</dt>
         <dd class="ranks">
-          ロイヤルフラッシュ → ストレートフラッシュ → フォーカード → <b>フラッシュ</b> → フルハウス → <b>スリーカード</b> → ストレート → ツーペア → ワンペア → ハイカード
-        </dd>
-        <dd style="opacity:.65; font-size:11px; letter-spacing:1px; margin-top:6px;">
-          ※ ショートデッキ仕様: <b>フラッシュ &gt; フルハウス</b> / <b>スリーカード &gt; ストレート</b>。<br>
-          ストレートのホイールは <b>A-8-9-10-J</b>（最弱のストレート）。
+          ロイヤルフラッシュ → ストレートフラッシュ → フォーカード → フルハウス → フラッシュ → ストレート → スリーカード → ツーペア → ワンペア → ハイカード
         </dd>
       </dl>
       <div class="close-hint">タップで閉じる</div>
@@ -633,25 +641,11 @@
     </div>
   </div>
 
-  <!-- ===== DECISION ===== -->
-  <div class="screen decision-screen" id="decisionScreen">
-    <div class="decision-timer" id="decisionTimer">15</div>
-    <div class="section-label">場のカード</div>
-    <div class="decision-board" id="decisionCommunity"></div>
-    <div class="section-label">あなたの手札</div>
-    <div class="hole-pair" id="holePair"></div>
-    <div class="decision-buttons" id="decisionButtons">
-      <button class="btn-fight" data-choice="fight">勝負</button>
-      <button class="btn-fold" data-choice="fold">フォールド</button>
-    </div>
-    <div class="decision-locked" id="decisionLocked" style="display:none">DECIDED</div>
-    <div class="decision-status" id="decisionStatus"></div>
-  </div>
-
   <!-- ===== REVEAL ===== -->
   <div class="screen reveal-screen" id="revealScreen">
+    <div class="round-tag" id="roundTag" style="display:none"></div>
     <div class="verdict-banner">
-      <div class="label">WINNER</div>
+      <div class="label" id="verdictLabel">LOSER</div>
       <div class="winner-name" id="winnerName">-</div>
     </div>
     <div class="drink-banner" id="drinkBanner">
@@ -661,7 +655,7 @@
     <div class="reveal-board" id="revealCommunity"></div>
     <div class="reveal-list" id="revealList"></div>
     <div class="footer-actions">
-      <button class="btn btn-primary" id="nextBtn" style="display:none">NEXT ROUND</button>
+      <button class="btn btn-primary" id="nextBtn" style="display:none">NEXT HAND</button>
       <button class="btn btn-ghost" id="leaveBtn2">退出</button>
     </div>
   </div>
@@ -669,28 +663,23 @@
 </div>
 
 <div class="toast" id="toast"></div>
-<div class="version-corner">v1.1.0</div>
+<div class="version-corner">v0.2.0</div>
 
 <script>
 "use strict";
 
 // ===== State =====
 const PHASES = {
-  LOBBY: "lobby", DECISION: "decision", REVEAL: "reveal",
+  LOBBY: "lobby", REVEAL: "reveal",
 };
 const STORAGE_KEY = "sprint_v1";
 let ws = null;
 let serverState = null;
 let myInfo = { name: "", room: "" };
-let timerInterval = null;
 let manualClose = false;     // user pressed disconnect — don't auto-reconnect
 let reconnectTimer = null;
 let reconnectAttempts = 0;
 const MAX_RECONNECT = 6;
-// Decision messages are stashed here when the user clicks while the socket
-// isn't OPEN (mid-reconnect). The most recent stash is flushed as soon as a
-// new socket opens, so a click made during a brief blip isn't lost.
-let pendingDecision = null;
 // Heartbeat — detects "silent dead" sockets where the browser still reports
 // readyState === OPEN but no traffic actually flows. If we don't see ANY
 // message from the server within HEARTBEAT_TIMEOUT_MS, we force a reconnect.
@@ -698,10 +687,8 @@ let heartbeatTimer = null;
 let lastServerMessageAt = 0;
 const HEARTBEAT_INTERVAL_MS = 5_000;
 const HEARTBEAT_TIMEOUT_MS = 20_000;
-// Cache the rendered card identity to avoid re-creating DOM nodes (and
-// re-running deal-in animations) when only decision/timer state changes.
-let lastCommunityKey = "";
-let lastHoleKey = "";
+// Cache the rendered reveal so a redundant server broadcast doesn't restart
+// the deal-in animation.
 let lastRevealKey = "";
 
 // Screen Wake Lock — keep the display on during a session. Auto-released
@@ -859,13 +846,6 @@ function connect(name, room) {
     lastServerMessageAt = Date.now();
     startHeartbeat();
     $("roomCodeDisplay").textContent = room;
-    // If the user clicked 勝負/フォールド while we were disconnected, send it
-    // now so the click isn't lost.
-    if (pendingDecision) {
-      const choice = pendingDecision;
-      pendingDecision = null;
-      try { sock.send(JSON.stringify({ type: "decision", choice })); } catch {}
-    }
     // Don't force-show lobby — onStateUpdate will pick the right screen
     // based on the server-reported phase (covers mid-game reconnect).
   });
@@ -885,7 +865,6 @@ function connect(name, room) {
     // must not clobber a healthy newer socket.
     const isCurrent = ws === sock;
     if (isCurrent) {
-      cleanupTimers();
       stopHeartbeat();
       ws = null;
     }
@@ -895,7 +874,6 @@ function connect(name, room) {
       if (isCurrent) {
         manualClose = true;
         reconnectAttempts = 0;
-        pendingDecision = null;
         showToast("別のタブで開かれました");
         showScreen("enter");
       }
@@ -906,7 +884,6 @@ function connect(name, room) {
       if (isCurrent) {
         manualClose = true;
         reconnectAttempts = 0;
-        pendingDecision = null;
         showToast(e.code === 4030 ? "ルームが満員です"
           : e.code === 4023 ? "ゲームが進行中で参加できません"
           : "ルームに入れませんでした");
@@ -918,7 +895,6 @@ function connect(name, room) {
     if (manualClose) {
       if (isCurrent) {
         reconnectAttempts = 0;
-        pendingDecision = null;
         showScreen("enter");
       }
       return;
@@ -939,7 +915,6 @@ function connect(name, room) {
     }
     if (isCurrent) {
       showToast("接続が切れました");
-      pendingDecision = null;
       showScreen("enter");
       reconnectAttempts = 0;
     }
@@ -977,12 +952,10 @@ function stopHeartbeat() {
 function disconnect() {
   manualClose = true;
   reconnectAttempts = 0;
-  pendingDecision = null;
   if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
   stopHeartbeat();
   if (ws) { try { ws.close(1000, "user disconnect"); } catch {} ws = null; }
   if (wakeLock) { try { wakeLock.release(); } catch {} wakeLock = null; }
-  cleanupTimers();
   showScreen("enter");
 }
 
@@ -990,18 +963,11 @@ function disconnect() {
 function onStateUpdate() {
   if (!serverState) return;
   const phase = serverState.phase;
-  // Reset card-identity cache when leaving the decision/reveal phases so that
-  // cards are freshly rendered (with deal-in animation) on the next round.
-  if (phase !== PHASES.DECISION) {
-    lastCommunityKey = "";
-    lastHoleKey = "";
-  }
   if (phase !== PHASES.REVEAL) {
     lastRevealKey = "";
   }
   switch (phase) {
     case PHASES.LOBBY: renderLobby(); break;
-    case PHASES.DECISION: renderDecision(); break;
     case PHASES.REVEAL: renderReveal(); break;
   }
 }
@@ -1009,7 +975,6 @@ function onStateUpdate() {
 // ===== Lobby =====
 function renderLobby() {
   showScreen("lobby");
-  cleanupTimers();
   const players = serverState.players || [];
   $("playerCountLabel").textContent = `(${players.length}/8)`;
   $("lobbyPlayerList").innerHTML = players.map(p => `
@@ -1037,139 +1002,106 @@ function renderLobby() {
   }
 }
 
-// ===== Decision =====
-function renderDecision() {
-  showScreen("decision");
-  cleanupTimers();
-
-  // community cards — only re-render DOM if the dealt cards actually changed
-  const community = serverState.community || [];
-  const communityKey = community.map(c => `${c.v}-${c.suit.sym}`).join(",");
-  if (communityKey !== lastCommunityKey) {
-    $("decisionCommunity").innerHTML = community.map(c =>
-      `<div class="community-card">${cardHTML(c, { flipped: true })}</div>`
-    ).join("");
-    lastCommunityKey = communityKey;
-  }
-
-  // your own hole cards — only re-render DOM if dealt cards changed
-  const hole = serverState.myHole || [];
-  const holeKey = hole.map(c => `${c.v}-${c.suit.sym}`).join(",");
-  if (holeKey !== lastHoleKey) {
-    if (hole.length === 2) {
-      $("holePair").innerHTML = hole.map(c =>
-        `<div class="hole-card-wrap">${cardHTML(c, { flipped: true, dealIn: true })}</div>`
-      ).join("");
-    } else {
-      $("holePair").innerHTML = "";
-    }
-    lastHoleKey = holeKey;
-  }
-
-  // these can change on every state update without affecting cards
-  const me = (serverState.players || []).find(p => p.isYou);
-  const decided = me && me.decided;
-  $("decisionButtons").style.display = decided ? "none" : "";
-  $("decisionLocked").style.display = decided ? "" : "none";
-
-  const totalPlayers = serverState.players.length;
-  const decidedCount = serverState.players.filter(p => p.decided).length;
-  $("decisionStatus").textContent = `決定: ${decidedCount} / ${totalPlayers} 人`;
-
-  // 15-second countdown — auto-fold handled server-side on timeout
-  const timer = $("decisionTimer");
-  const update = () => {
-    if (!serverState.phaseEndAt) {
-      timer.textContent = "—";
-      timer.classList.remove("urgent");
-      return;
-    }
-    const remain = Math.max(0, Math.ceil((serverState.phaseEndAt - Date.now()) / 1000));
-    timer.textContent = remain;
-    timer.classList.toggle("urgent", remain <= 5);
-  };
-  update();
-  timerInterval = setInterval(update, 250);
-}
-
 // ===== Reveal =====
 function renderReveal() {
   showScreen("reveal");
-  cleanupTimers();
   const result = serverState.result || {};
   const players = serverState.players;
   const community = serverState.community || [];
+  const eligibleSet = new Set(serverState.eligibleIds || []);
+  const losersSet = new Set(result.losers || []);
+  const isTiebreaker = !!serverState.isTiebreaker;
+  const tiebreakerScheduled = !!serverState.tiebreakerScheduled;
+  const isFinal = !!result.final;
 
-  // Build a key that captures the full reveal state. If unchanged, skip
-  // re-rendering DOM (avoids cards "flashing" if the room re-broadcasts).
+  // Skip re-render if nothing material changed (server may re-broadcast).
   const revealKey = JSON.stringify({
     community: community.map(c => `${c.v}-${c.suit.sym}`),
     players: players.map(p => ({
       id: p.id,
-      decision: p.decision,
       hole: (p.hole || []).map(c => `${c.v}-${c.suit.sym}`),
+      eligible: p.eligible,
     })),
     drinks: result.drinks || {},
-    winners: result.winners || [],
     losers: result.losers || [],
+    round: result.roundNumber || 0,
+    tbs: tiebreakerScheduled,
+    final: isFinal,
   });
 
   const isHost = serverState.you === serverState.hostId;
-  $("nextBtn").style.display = isHost ? "" : "none";
+  // The host's "NEXT HAND" button only appears on the final round (no
+  // pending tiebreaker). Mid-tiebreaker the server auto-advances.
+  $("nextBtn").style.display = (isHost && isFinal) ? "" : "none";
 
   if (revealKey === lastRevealKey) return;
   lastRevealKey = revealKey;
 
-  // Winner banner
-  const winners = (result.winners || []).map(id => players.find(p => p.id === id)).filter(Boolean);
-  const winnerNames = winners.length === 0 ? "全員フォールド" : winners.map(w => w.name).join(" & ");
-  $("winnerName").textContent = winnerNames;
+  // ── Round badge ──
+  const roundTag = $("roundTag");
+  if (isTiebreaker) {
+    roundTag.style.display = "";
+    roundTag.classList.remove("original");
+    roundTag.textContent = `決勝戦 #${(result.roundNumber || 2) - 1}`;
+  } else {
+    roundTag.style.display = "";
+    roundTag.classList.add("original");
+    roundTag.textContent = "SHOWDOWN";
+  }
 
-  // Drink banner — emphasize who drinks
+  // ── Loser banner ──
+  const losers = (result.losers || []).map(id => players.find(p => p.id === id)).filter(Boolean);
+  const verdictLabel = $("verdictLabel");
+  const winnerName = $("winnerName");
+  if (losers.length === 0) {
+    verdictLabel.textContent = "—";
+    winnerName.textContent = "—";
+  } else if (losers.length === 1 && isFinal) {
+    verdictLabel.textContent = "LOSER";
+    winnerName.textContent = losers[0].name;
+  } else if (tiebreakerScheduled) {
+    verdictLabel.textContent = `${losers.length}人タイ → 決勝戦へ`;
+    winnerName.textContent = losers.map(l => l.name).join(" / ");
+  } else {
+    // Final by safety net (max tiebreaker rounds reached) — all tied losers drink
+    verdictLabel.textContent = "LOSERS (タイ)";
+    winnerName.textContent = losers.map(l => l.name).join(" / ");
+  }
+
+  // ── Drink banner ──
   const drinkerList = players
     .filter(p => (result.drinks?.[p.id] || 0) > 0)
-    .sort((a, b) => (result.drinks[b.id] || 0) - (result.drinks[a.id] || 0))
     .map(p => `${p.name} ${result.drinks[p.id]}杯`);
   const drinkBanner = $("drinkBanner");
   if (drinkerList.length > 0) {
     drinkBanner.classList.remove("no-drinkers");
     $("drinkerText").textContent = drinkerList.join("　/　");
+  } else if (tiebreakerScheduled) {
+    drinkBanner.classList.add("no-drinkers");
+    $("drinkerText").textContent = "決まり次第";
   } else {
     drinkBanner.classList.add("no-drinkers");
-    $("drinkerText").textContent = "誰も飲まない";
+    $("drinkerText").textContent = "—";
   }
 
-  // Winning cards (community + hole) — for highlighting
-  const winnerBest = winners.length > 0 && result.bestHands && result.bestHands[winners[0].id]
-    ? result.bestHands[winners[0].id] : null;
-  const winnerCardSet = new Set();
-  if (winnerBest && winnerBest.cards) {
-    for (const c of winnerBest.cards) winnerCardSet.add(cardKey(c));
-  }
+  // ── Community cards ──
+  $("revealCommunity").innerHTML = community.map(c =>
+    `<div class="community-card">${cardHTML(c, { flipped: true })}</div>`
+  ).join("");
 
-  // Community
-  $("revealCommunity").innerHTML = community.map(c => {
-    const inBest = winnerCardSet.has(cardKey(c));
-    return `<div class="community-card ${inBest ? "in-best" : ""}">${cardHTML(c, { flipped: true })}</div>`;
-  }).join("");
-
-  // Player list
-  const winnerSet = new Set(result.winners || []);
+  // ── Player rows ──
   $("revealList").innerHTML = players.map(p => {
     const drinks = result.drinks?.[p.id] || 0;
-    const isWinner = winnerSet.has(p.id);
-    const isDrinker = drinks > 0;
-    const decision = p.decision;
-    const isFold = decision === "fold";
+    const isLoser = losersSet.has(p.id);
+    const isEligible = eligibleSet.has(p.id);
     const best = result.bestHands?.[p.id];
-    const handName = best ? best.name : "";
+    const handName = best ? best.name : (isEligible ? "" : "観戦");
 
     let classes = "reveal-row";
-    if (isWinner) classes += " winner";
-    if (isDrinker) classes += " drinker";
-    if (isFold) classes += " fold";
+    if (drinks > 0) classes += " drinker";
+    if (!isEligible) classes += " spectator";
 
-    const yourCardSet = isWinner && best && best.cards
+    const yourCardSet = isLoser && best && best.cards
       ? new Set(best.cards.map(cardKey))
       : null;
     const cardsHtml = (p.hole || []).map(c => {
@@ -1178,16 +1110,16 @@ function renderReveal() {
     }).join("");
 
     let drinkHtml;
-    if (isWinner) drinkHtml = `<div class="pdrinks win">勝</div>`;
+    if (!isEligible) drinkHtml = `<div class="pdrinks">観戦</div>`;
     else if (drinks > 0) drinkHtml = `<div class="pdrinks heavy">${drinks}杯</div>`;
-    else drinkHtml = `<div class="pdrinks">セーフ</div>`;
+    else if (isLoser && tiebreakerScheduled) drinkHtml = `<div class="pdrinks">決勝戦</div>`;
+    else drinkHtml = `<div class="pdrinks win">セーフ</div>`;
 
     return `
       <div class="${classes}">
         <div class="reveal-info">
           <div class="pname ${p.isYou ? "you" : ""}">
-            ${escapeHtml(p.name)}
-            <span class="pdecision ${decision || ""}">${decision === "fight" ? "勝負" : decision === "fold" ? "フォールド" : "-"}</span>
+            ${escapeHtml(p.name)}${p.drinkCount > 0 ? ` <span class="pdecision">${p.drinkCount}杯</span>` : ""}
           </div>
           <div class="phand">${handName}</div>
         </div>
@@ -1196,10 +1128,6 @@ function renderReveal() {
       </div>
     `;
   }).join("");
-}
-
-function cleanupTimers() {
-  if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
 }
 
 // ===== Event listeners =====
@@ -1231,25 +1159,6 @@ $("rulesOverlay").addEventListener("click", (e) => {
   // close when tapping outside the card itself (or anywhere — card click is also dismissed)
   if (e.target.closest(".rules-card") && !e.target.classList.contains("close-hint")) return;
   $("rulesOverlay").classList.remove("show");
-});
-
-document.querySelectorAll("#decisionButtons button").forEach(b => {
-  b.addEventListener("click", () => {
-    const choice = b.dataset.choice;
-    // Optimistically lock the UI so the user sees their choice register
-    // immediately, even if the message has to wait for a reconnect.
-    $("decisionButtons").style.display = "none";
-    $("decisionLocked").style.display = "";
-    const sent = send({ type: "decision", choice });
-    if (!sent) {
-      // Socket isn't OPEN — stash the choice; it'll be flushed when the new
-      // socket opens (auto-reconnect or the user-pressed-mid-blip case).
-      pendingDecision = choice;
-      showToast("再接続待ち…決定は送信予定です", 2000);
-      // Nudge a reconnect so the message goes out as soon as possible.
-      forceReconnect("send-while-closed");
-    }
-  });
 });
 
 document.addEventListener("gesturestart", e => e.preventDefault());

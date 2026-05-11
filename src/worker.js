@@ -1,12 +1,12 @@
 // ===== Constants =====
 const PHASES = {
   LOBBY: "lobby",
-  DECISION: "decision",
   REVEAL: "reveal",
 };
-const DECISION_MS = 15_000;
 const MAX_PLAYERS = 8;
-const GRACE_MS = 15_000; // keep a disconnected player around this long for reconnect
+const GRACE_MS = 15_000;          // hold a seat through disconnect/reconnect
+const TIEBREAKER_DELAY_MS = 4_000; // savor the showdown before a tiebreaker re-deal
+const MAX_TIEBREAKER_ROUNDS = 6;   // safety net against pathological infinite ties
 
 const SUITS = [
   { sym: "♠", color: "black" },
@@ -14,9 +14,10 @@ const SUITS = [
   { sym: "♦", color: "red" },
   { sym: "♣", color: "black" },
 ];
-// Short deck — 8 through A only (7 ranks × 4 suits = 28 cards).
-// Stronger hands hit more often, decisions get punchier, sessions ~3 min.
+// Standard 52-card deck.
 const RANKS = [
+  { v: 2, label: "2" }, { v: 3, label: "3" }, { v: 4, label: "4" },
+  { v: 5, label: "5" }, { v: 6, label: "6" }, { v: 7, label: "7" },
   { v: 8, label: "8" }, { v: 9, label: "9" }, { v: 10, label: "10" },
   { v: 11, label: "J" }, { v: 12, label: "Q" }, { v: 13, label: "K" },
   { v: 14, label: "A" },
@@ -32,16 +33,10 @@ function buildDeck() {
   return deck;
 }
 
-// ===== Hand evaluator (short-deck 5-card poker; supports best-of-N) =====
-// Short-deck convention (a.k.a. 6+ Hold'em rankings, applied to 8+):
-//   FLUSH beats FULL HOUSE  (fewer cards per suit → flush rarer)
-//   THREE OF A KIND beats STRAIGHT  (fewer ranks → straights easier)
-// Tier order (low→high):
-//   0 ハイカード, 1 ワンペア, 2 ツーペア, 3 ストレート, 4 スリーカード,
-//   5 フルハウス, 6 フラッシュ, 7 フォーカード, 8 SF, 9 ロイヤルF
+// ===== Standard Texas Hold'em hand evaluator (5-card; best of 7) =====
 const TIER_NAMES = [
-  "ハイカード", "ワンペア", "ツーペア", "ストレート",
-  "スリーカード", "フルハウス", "フラッシュ", "フォーカード",
+  "ハイカード", "ワンペア", "ツーペア", "スリーカード",
+  "ストレート", "フラッシュ", "フルハウス", "フォーカード",
   "ストレートフラッシュ", "ロイヤルフラッシュ",
 ];
 
@@ -63,12 +58,10 @@ function evaluate5(hand) {
     if (ranks[0] - ranks[4] === 4) {
       isStraight = true;
       straightTop = ranks[0];
-    } else if (ranks[0] === 14 && ranks[1] === 11 && ranks[2] === 10 && ranks[3] === 9 && ranks[4] === 8) {
-      // Short-deck wheel: A-8-9-10-J — A plays low. J-high, but the
-      // weakest straight, so straightTop = 11 keeps it below 8-9-10-J-Q
-      // (straightTop = 12) when tie-breaking.
+    } else if (ranks[0] === 14 && ranks[1] === 5 && ranks[2] === 4 && ranks[3] === 3 && ranks[4] === 2) {
+      // A-2-3-4-5 wheel; A plays low so straightTop = 5.
       isStraight = true;
-      straightTop = 11;
+      straightTop = 5;
     }
   }
 
@@ -80,18 +73,18 @@ function evaluate5(hand) {
   } else if (countVals[0] === 4) {
     tier = 7;
     primary = [sortedCounts[0].rank, sortedCounts[1].rank];
-  } else if (flush) {
-    tier = 6;
-    primary = ranks;
   } else if (countVals[0] === 3 && countVals[1] === 2) {
-    tier = 5;
+    tier = 6;
     primary = [sortedCounts[0].rank, sortedCounts[1].rank];
-  } else if (countVals[0] === 3) {
-    tier = 4;
-    primary = [sortedCounts[0].rank, sortedCounts[1].rank, sortedCounts[2].rank];
+  } else if (flush) {
+    tier = 5;
+    primary = ranks;
   } else if (isStraight) {
-    tier = 3;
+    tier = 4;
     primary = [straightTop];
+  } else if (countVals[0] === 3) {
+    tier = 3;
+    primary = [sortedCounts[0].rank, sortedCounts[1].rank, sortedCounts[2].rank];
   } else if (countVals[0] === 2 && countVals[1] === 2) {
     tier = 2;
     primary = [sortedCounts[0].rank, sortedCounts[1].rank, sortedCounts[2].rank];
@@ -164,14 +157,16 @@ export default {
 export class GameRoom {
   constructor(state, env) {
     this.state = state;
-    this.sessions = new Map(); // sessionId -> { ws, playerId }
-    this.players = new Map(); // playerId -> { name, hole, decision, drinkCount }
+    this.sessions = new Map();     // sessionId -> { ws, playerId }
+    this.players = new Map();      // playerId -> { name, hole, drinkCount, removeTimer }
     this.community = [];
     this.phase = PHASES.LOBBY;
     this.hostId = null;
-    this.phaseEndAt = null;
     this.timer = null;
     this.lastResult = null;
+    this.eligibleIds = [];         // who holds cards in the current round
+    this.roundNumber = 0;          // 1 = original showdown, 2+ = tiebreakers
+    this.tiebreakerScheduled = false;
   }
 
   async fetch(request) {
@@ -181,8 +176,6 @@ export class GameRoom {
     const url = new URL(request.url);
     const name = (url.searchParams.get("name") || "").trim().slice(0, 20);
     const clientId = (url.searchParams.get("clientId") || "").trim();
-    // Validation rejections stay as HTTP — these are programmer errors, not
-    // user-facing room conditions, and the client never recovers from them.
     if (!name) return new Response("Missing name", { status: 400 });
     if (!/^[A-Za-z0-9-]{8,64}$/.test(clientId)) {
       return new Response("Missing or invalid clientId", { status: 400 });
@@ -190,10 +183,7 @@ export class GameRoom {
 
     const existing = this.players.get(clientId);
 
-    // Decide acceptance up front so we can reject via a WebSocket close code
-    // (HTTP 4xx upgrade failures surface to the browser as opaque close 1006,
-    // which our client can't distinguish from a transient network blip).
-    let rejectCode = 0; // 0 = accept
+    let rejectCode = 0;
     let rejectReason = "";
     if (!existing) {
       if (this.players.size >= MAX_PLAYERS && this.phase === PHASES.LOBBY) {
@@ -213,28 +203,21 @@ export class GameRoom {
     }
 
     if (existing) {
-      // Reconnect / takeover: reuse the existing seat (preserves cards,
-      // decision, drinkCount). Cancel pending grace removal if any.
       if (existing.removeTimer) {
         clearTimeout(existing.removeTimer);
         existing.removeTimer = null;
       }
-      existing.name = name; // allow renaming on reconnect
+      existing.name = name;
     } else {
       this.players.set(clientId, {
         name,
         hole: null,
-        decision: null,
         drinkCount: 0,
         removeTimer: null,
       });
       if (!this.hostId) this.hostId = clientId;
     }
 
-    // Capture (but don't yet close) the prior session. We must register the
-    // new session FIRST so that the prior socket's close handler — which may
-    // fire synchronously from close() — sees `sess.ws !== server` and skips
-    // handleDisconnect.
     const prior = existing ? this.sessions.get(clientId) : null;
     this.sessions.set(clientId, { ws: server, playerId: clientId });
 
@@ -244,8 +227,6 @@ export class GameRoom {
       await this.handleMessage(clientId, msg);
     });
     const onClose = () => {
-      // Ignore close events from sockets that were already replaced by a newer
-      // connection for the same clientId.
       const sess = this.sessions.get(clientId);
       if (sess && sess.ws === server) {
         this.handleDisconnect(clientId);
@@ -265,8 +246,6 @@ export class GameRoom {
   async handleMessage(playerId, msg) {
     switch (msg.type) {
       case "ping": {
-        // Liveness probe — keeps the client's heartbeat happy during quiet
-        // periods (e.g. lobby) and makes silent-dead sockets fail fast.
         const sess = this.sessions.get(playerId);
         if (sess) {
           try { sess.ws.send(JSON.stringify({ type: "pong" })); } catch {}
@@ -276,23 +255,14 @@ export class GameRoom {
       case "start":
         if (playerId === this.hostId && this.phase === PHASES.LOBBY) {
           if (this.players.size < 2) return;
-          this.startDecision();
-        }
-        break;
-      case "decision":
-        if (this.phase === PHASES.DECISION && (msg.choice === "fight" || msg.choice === "fold")) {
-          const p = this.players.get(playerId);
-          if (p && !p.decision) {
-            p.decision = msg.choice;
-            this.broadcast();
-            if ([...this.players.values()].every(pl => pl.decision)) {
-              this.endDecision();
-            }
-          }
+          this.startShowdown([...this.players.keys()]);
         }
         break;
       case "next":
-        if (playerId === this.hostId && this.phase === PHASES.REVEAL) {
+        // Only the host can advance, and only after a final (non-tiebreaker-pending) reveal.
+        if (playerId === this.hostId
+            && this.phase === PHASES.REVEAL
+            && !this.tiebreakerScheduled) {
           this.resetToLobby();
         }
         break;
@@ -304,31 +274,37 @@ export class GameRoom {
     const player = this.players.get(playerId);
     if (!player) return;
 
-    // In LOBBY, drop immediately — no game state worth preserving
     if (this.phase === PHASES.LOBBY) {
       this.removePlayer(playerId);
       this.broadcast();
       return;
     }
 
-    // In active game, hold the seat for GRACE_MS so the client can reconnect
+    // Active round: hold seat for grace period (preserves cards + drinkCount).
     if (player.removeTimer) clearTimeout(player.removeTimer);
     player.removeTimer = setTimeout(() => {
       player.removeTimer = null;
       this.removePlayer(playerId);
       if (this.players.size === 0) {
         this.clearTimer();
-        this.phase = PHASES.LOBBY;
-        this.lastResult = null;
-        return;
-      }
-      if (this.players.size < 2 && this.phase !== PHASES.LOBBY) {
         this.resetToLobby();
         return;
       }
-      if (this.phase === PHASES.DECISION
-          && [...this.players.values()].every(pl => pl.decision)) {
-        this.endDecision();
+      // If the leaver was in eligibleIds, recompute / advance the round.
+      if (this.phase === PHASES.REVEAL && this.eligibleIds.includes(playerId)) {
+        this.eligibleIds = this.eligibleIds.filter(id => id !== playerId);
+        // If only one (or zero) eligible left and we were waiting for a tiebreaker
+        // re-deal, just collapse to lobby.
+        if (this.eligibleIds.length < 2) {
+          this.clearTimer();
+          this.tiebreakerScheduled = false;
+          // No legitimate single-loser result possible — let the host re-start.
+          this.broadcast();
+          return;
+        }
+      }
+      if (this.players.size < 2 && this.phase !== PHASES.LOBBY) {
+        this.resetToLobby();
         return;
       }
       this.broadcast();
@@ -343,122 +319,120 @@ export class GameRoom {
     }
   }
 
-  startDecision() {
-    this.phase = PHASES.DECISION;
-    this.phaseEndAt = Date.now() + DECISION_MS;
-    this.lastResult = null;
+  // ===== Round flow =====
+  startShowdown(eligibleIds) {
+    this.phase = PHASES.REVEAL;
+    this.eligibleIds = eligibleIds;
+    this.roundNumber = 1;
+    this.tiebreakerScheduled = false;
+    this.dealAndCompute();
+  }
+
+  startTiebreaker(eligibleIds) {
+    if (eligibleIds.length < 2) {
+      // shouldn't happen, but bail to lobby safely
+      this.resetToLobby();
+      return;
+    }
+    this.eligibleIds = eligibleIds;
+    this.roundNumber += 1;
+    this.tiebreakerScheduled = false;
+    this.dealAndCompute();
+  }
+
+  dealAndCompute() {
     const deck = buildDeck();
-    for (const p of this.players.values()) {
-      p.hole = [deck.pop(), deck.pop()];
-      p.decision = null;
+    // Clear everyone's hole; deal only to eligible players.
+    for (const [id, p] of this.players) {
+      if (this.eligibleIds.includes(id)) {
+        p.hole = [deck.pop(), deck.pop()];
+      } else {
+        p.hole = null;
+      }
     }
     this.community = [];
-    for (let i = 0; i < 7; i++) this.community.push(deck.pop());
-    this.clearTimer();
-    this.timer = setTimeout(() => this.timeoutDecision(), DECISION_MS);
-    this.broadcast();
-  }
+    for (let i = 0; i < 5; i++) this.community.push(deck.pop());
 
-  timeoutDecision() {
-    // Anyone who didn't decide in time is auto-folded
-    for (const p of this.players.values()) {
-      if (!p.decision) p.decision = "fold";
-    }
-    this.endDecision();
-  }
-
-  endDecision() {
-    this.phase = PHASES.REVEAL;
-    this.phaseEndAt = null;
-    this.clearTimer();
-
-    // compute best hand for every player (for "would have won" detection)
+    // Best hand per eligible
     const handsById = {};
-    for (const [id, p] of this.players) {
+    for (const id of this.eligibleIds) {
+      const p = this.players.get(id);
+      if (!p || !p.hole) continue;
       handsById[id] = bestHand([...p.hole, ...this.community]);
     }
+    const presentIds = Object.keys(handsById);
 
-    const fighters = [...this.players.entries()].filter(([, p]) => p.decision === "fight");
-    const folders = [...this.players.entries()].filter(([, p]) => p.decision === "fold");
-    const fightCount = fighters.length;
-
-    let winners = [];
     let losers = [];
     const drinks = {};
 
-    if (fighters.length > 0) {
-      // Find best (winners) and worst (losers) hand among fighters
-      let bestRef = handsById[fighters[0][0]];
-      let worstRef = handsById[fighters[0][0]];
-      for (const [id] of fighters) {
-        const h = handsById[id];
-        if (compareHands(h, bestRef) > 0) bestRef = h;
-        if (compareHands(h, worstRef) < 0) worstRef = h;
+    if (presentIds.length > 0) {
+      let worstRef = handsById[presentIds[0]];
+      for (const id of presentIds) {
+        if (compareHands(handsById[id], worstRef) < 0) worstRef = handsById[id];
       }
-      winners = fighters
-        .filter(([id]) => compareHands(handsById[id], bestRef) === 0)
-        .map(([id]) => id);
-      losers = fighters
-        .filter(([id]) => compareHands(handsById[id], worstRef) === 0)
-        .map(([id]) => id);
+      losers = presentIds.filter(id => compareHands(handsById[id], worstRef) === 0);
+    }
 
-      // Avoid winner/loser overlap (everyone tied → no losers)
-      const winnerSet = new Set(winners);
-      const realLosers = losers.filter(id => !winnerSet.has(id));
-
-      const loserSet = new Set(realLosers);
-      for (const [id, p] of fighters) {
-        if (loserSet.has(id)) {
-          drinks[id] = fightCount;
-          p.drinkCount += fightCount;
-        } else {
-          drinks[id] = 0;
-        }
-      }
-      for (const [id, p] of folders) {
+    let final = false;
+    if (losers.length === 1) {
+      drinks[losers[0]] = 1;
+      this.players.get(losers[0]).drinkCount += 1;
+      this.tiebreakerScheduled = false;
+      final = true;
+    } else if (losers.length >= 2 && this.roundNumber >= MAX_TIEBREAKER_ROUNDS) {
+      // safety net — endless tie. Everyone tied drinks 1.
+      for (const id of losers) {
         drinks[id] = 1;
-        p.drinkCount += 1;
+        this.players.get(id).drinkCount += 1;
       }
-      losers = realLosers;
+      this.tiebreakerScheduled = false;
+      final = true;
+    } else if (losers.length >= 2) {
+      // Tie — schedule next round
+      this.tiebreakerScheduled = true;
+      this.clearTimer();
+      const tiedIds = [...losers];
+      this.timer = setTimeout(() => {
+        this.timer = null;
+        this.startTiebreaker(tiedIds);
+      }, TIEBREAKER_DELAY_MS);
     } else {
-      // All folded — everyone drinks 1
-      for (const [id, p] of folders) {
-        drinks[id] = 1;
-        p.drinkCount += 1;
-      }
+      // No eligible players left (everyone disconnected mid-round).
+      this.tiebreakerScheduled = false;
+      final = true;
     }
 
     this.lastResult = {
       community: this.community,
       hands: Object.fromEntries(
-        [...this.players.entries()].map(([id, p]) => [id, p.hole])
+        this.eligibleIds
+          .filter(id => this.players.has(id) && this.players.get(id).hole)
+          .map(id => [id, this.players.get(id).hole])
       ),
       bestHands: Object.fromEntries(
         Object.entries(handsById).map(([id, h]) => [id, {
-          tier: h.tier,
-          name: h.name,
-          cards: h.cards,
+          tier: h.tier, name: h.name, cards: h.cards,
         }])
       ),
-      fighters: fighters.map(([id]) => id),
-      folders: folders.map(([id]) => id),
-      winners,
+      eligibleIds: [...this.eligibleIds],
       losers,
       drinks,
-      fightCount,
+      isTiebreaker: this.roundNumber > 1,
+      roundNumber: this.roundNumber,
+      tiebreakerScheduled: this.tiebreakerScheduled,
+      final,
     };
     this.broadcast();
   }
 
   resetToLobby() {
     this.phase = PHASES.LOBBY;
-    this.phaseEndAt = null;
     this.clearTimer();
     this.community = [];
-    for (const p of this.players.values()) {
-      p.hole = null;
-      p.decision = null;
-    }
+    this.eligibleIds = [];
+    this.roundNumber = 0;
+    this.tiebreakerScheduled = false;
+    for (const p of this.players.values()) p.hole = null;
     this.lastResult = null;
     this.broadcast();
   }
@@ -472,7 +446,7 @@ export class GameRoom {
       try {
         const msg = this.viewForPlayer(session.playerId);
         session.ws.send(JSON.stringify(msg));
-      } catch (e) {
+      } catch {
         // ignore broken sockets
       }
     }
@@ -482,21 +456,19 @@ export class GameRoom {
     const me = this.players.get(playerId);
     const players = [...this.players.entries()].map(([id, p]) => {
       const isYou = id === playerId;
-      // Other players' hole cards stay hidden until REVEAL.
-      let hole = null;
-      if (this.phase === PHASES.REVEAL) hole = p.hole;
+      // In REVEAL, eligible players' hole cards are visible to everyone.
+      // Eliminated (non-eligible) players have no hole this round.
+      const hole = (this.phase === PHASES.REVEAL && this.eligibleIds.includes(id))
+        ? p.hole : null;
       return {
         id,
         name: p.name,
         drinkCount: p.drinkCount,
-        decision: this.phase === PHASES.REVEAL ? p.decision : null,
-        decided: !!p.decision,
         hole,
         isYou,
+        eligible: this.eligibleIds.includes(id),
       };
     });
-    const showCommunity = this.phase === PHASES.DECISION
-      || this.phase === PHASES.REVEAL;
     return {
       type: "state",
       state: {
@@ -504,11 +476,13 @@ export class GameRoom {
         players,
         hostId: this.hostId,
         you: playerId,
-        phaseEndAt: this.phaseEndAt,
-        community: showCommunity ? this.community : [],
-        // YOUR own hole cards visible during DECISION (and remain visible at REVEAL)
-        myHole: (this.phase === PHASES.DECISION && me) ? me.hole : null,
+        community: this.phase === PHASES.REVEAL ? this.community : [],
+        myHole: (this.phase === PHASES.REVEAL && me) ? me.hole : null,
         result: this.phase === PHASES.REVEAL ? this.lastResult : null,
+        eligibleIds: [...this.eligibleIds],
+        roundNumber: this.roundNumber,
+        isTiebreaker: this.roundNumber > 1,
+        tiebreakerScheduled: this.tiebreakerScheduled,
       },
     };
   }

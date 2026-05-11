@@ -401,34 +401,33 @@
   .card-front.red   { color: #d61e2e; }
   .card-front.black { color: #0a0a0a; }
   /* Card front layout:
-        top-left  ← suit  (small)
-        top-right ← rank  (small)
-        bottom    ← big suit (dominant) */
+        top-left  ← suit  (large)
+        top-right ← rank  (large; "10" handled via tight letter-spacing)
+        bottom    ← MASSIVE suit (dominant visual) */
   .corner-suit, .corner-rank {
     position: absolute;
     line-height: 1;
     font-family: 'Inter', 'Helvetica Neue', system-ui, sans-serif;
-    font-weight: 900; letter-spacing: -0.04em;
+    font-weight: 900;
   }
-  .corner-suit { top: 6%; left: 8%; }
-  .corner-rank { top: 6%; right: 8%; }
+  .corner-suit { top: 4%; left: 5%; letter-spacing: 0; }
+  .corner-rank { top: 4%; right: 5%; letter-spacing: -0.1em; }
   .bottom-suit {
     position: absolute;
-    left: 50%; bottom: 8%;
+    left: 50%; bottom: 4%;
     transform: translateX(-50%);
     line-height: 1;
   }
 
-  /* Container-query based font sizing — each card auto-scales to its own
-     container, so layouts hold at any size. */
+  /* Container-query font sizing — each card auto-scales to its own width. */
   .community-card,
   .hole-card-wrap,
   .pcard {
     container-type: inline-size;
   }
-  .card .corner-suit { font-size: 28cqw; }
-  .card .corner-rank { font-size: 32cqw; }
-  .card .bottom-suit { font-size: 56cqw; }
+  .card .corner-suit { font-size: 42cqw; }
+  .card .corner-rank { font-size: 46cqw; }
+  .card .bottom-suit { font-size: 92cqw; }
 
   /* Status text */
   .status-line {
@@ -590,7 +589,7 @@
     </div>
     <button class="btn btn-primary" id="enterBtn">JOIN</button>
     <button class="btn-link-text" id="rulesBtn">ルールを見る</button>
-    <div class="version-tag">v0.6.0 · deal-button</div>
+    <div class="version-tag">v0.6.1 · bigger-pip</div>
   </div>
 
   <!-- ===== RULES OVERLAY ===== -->
@@ -670,7 +669,7 @@
 </div>
 
 <div class="toast" id="toast"></div>
-<div class="version-corner">v0.6.0</div>
+<div class="version-corner">v0.6.1</div>
 
 <script>
 "use strict";

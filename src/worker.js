@@ -3,6 +3,9 @@ const PHASES = {
   LOBBY: "lobby",
   REVEAL: "reveal",
 };
+// 52枚デッキで「場5 + 手札2/人」なので物理的には (52-5)/2 = 23人まで配れる。
+// ただし飲み会向け UX (ショウダウン画面の見やすさ・1卓の盛り上がり) を考えて
+// 8人で打ち切る。9人目以降は WebSocket close code 4030 で弾く。
 const MAX_PLAYERS = 8;
 const GRACE_MS = 15_000;          // hold a seat through disconnect/reconnect
 const TIEBREAKER_DELAY_MS = 4_000; // savor the showdown before a tiebreaker re-deal

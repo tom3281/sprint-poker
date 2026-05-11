@@ -400,43 +400,35 @@
   }
   .card-front.red   { color: #d61e2e; }
   .card-front.black { color: #0a0a0a; }
-  .corner {
+  /* Card front layout:
+        top-left  ← suit  (small)
+        top-right ← rank  (small)
+        bottom    ← big suit (dominant) */
+  .corner-suit, .corner-rank {
     position: absolute;
-    display: flex; flex-direction: column; align-items: center;
-    line-height: 0.82;
+    line-height: 1;
     font-family: 'Inter', 'Helvetica Neue', system-ui, sans-serif;
-    font-weight: 800; letter-spacing: -0.05em;
+    font-weight: 900; letter-spacing: -0.04em;
   }
-  .corner.tl { top: 5%; left: 7%; }
-  .corner.br { bottom: 5%; right: 7%; transform: rotate(180deg); }
-  .corner .rank { line-height: 0.82; }
-  .corner .suit-mini { line-height: 1; margin-top: 0.04em; opacity: 0.95; }
-
-  .center-ace {
-    position: absolute; inset: 0;
-    display: flex; align-items: center; justify-content: center;
+  .corner-suit { top: 6%; left: 8%; }
+  .corner-rank { top: 6%; right: 8%; }
+  .bottom-suit {
+    position: absolute;
+    left: 50%; bottom: 8%;
+    transform: translateX(-50%);
     line-height: 1;
   }
-  .center-face {
-    position: absolute; inset: 0;
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    font-family: 'Georgia', serif; font-weight: 900;
-    letter-spacing: -0.04em; line-height: 1;
-  }
-  .face-letter { line-height: 0.88; }
-  .face-suit { font-size: 0.42em; line-height: 1; opacity: 0.88; margin-top: 0.08em; }
 
-  /* Container-query based font sizing — every card auto-scales to its
-     own container's width, so suits never overlap regardless of size. */
+  /* Container-query based font sizing — each card auto-scales to its own
+     container, so layouts hold at any size. */
   .community-card,
   .hole-card-wrap,
   .pcard {
     container-type: inline-size;
   }
-  .card .corner .rank { font-size: 30cqw; font-weight: 900; }
-  .card .corner .suit-mini { font-size: 26cqw; }
-  .card .center-ace { font-size: 78cqw; }
-  .card .center-face { font-size: 64cqw; }
+  .card .corner-suit { font-size: 28cqw; }
+  .card .corner-rank { font-size: 32cqw; }
+  .card .bottom-suit { font-size: 56cqw; }
 
   /* Status text */
   .status-line {
@@ -598,7 +590,7 @@
     </div>
     <button class="btn btn-primary" id="enterBtn">JOIN</button>
     <button class="btn-link-text" id="rulesBtn">ルールを見る</button>
-    <div class="version-tag">v0.5.0 · classic-trump</div>
+    <div class="version-tag">v0.6.0 · deal-button</div>
   </div>
 
   <!-- ===== RULES OVERLAY ===== -->
@@ -613,7 +605,7 @@
         <dd>各自スマホで同じルームコードに JOIN (<b>最大8人</b>)。ロビーで全員揃ったらホストが START。判断・フォールドはなし。</dd>
 
         <dt>配り</dt>
-        <dd>自分の手札 <b>2枚</b>（自分だけ見える）と、場の共通カード <b>5枚</b>。場札は <b>ホストがボタンでめくる</b>: FLOP (3枚) → TURN (1枚) → RIVER (1枚) → SHOWDOWN の順。</dd>
+        <dd>自分の手札 <b>2枚</b>（自分だけ見える）と、場の共通カード <b>5枚</b>（最初は全部裏向き）。場札は <b>ホストがボタンでめくる</b>: <b>FLOP</b> (3枚) → <b>TURN</b> (1枚) → <b>RIVER</b> (1枚) → <b>SHOWDOWN</b> の順。</dd>
 
         <dt>ショウダウン</dt>
         <dd>ホストが SHOWDOWN ボタンを押すと、7枚（手札2＋場5）から作れる <b>最強の5枚役</b> を全員自動で構成。<b>一番弱い人が飲む</b>。</dd>
@@ -678,7 +670,7 @@
 </div>
 
 <div class="toast" id="toast"></div>
-<div class="version-corner">v0.5.0</div>
+<div class="version-corner">v0.6.0</div>
 
 <script>
 "use strict";
@@ -807,15 +799,7 @@ function showToast(msg, ms = 2500) {
 }
 
 // ===== Card rendering =====
-// Simple design: corner rank/suit + a single big center suit (or face letter
-// for J/Q/K). Avoids pip-overlap issues at small sizes on mobile.
-function centerHTML(card) {
-  const r = card.label, s = card.suit.sym;
-  if (["J","Q","K"].includes(r)) {
-    return `<div class="center-face"><span class="face-letter">${r}</span><span class="face-suit">${s}</span></div>`;
-  }
-  return `<div class="center-ace">${s}</div>`;
-}
+// Layout: top-left = suit, top-right = rank, bottom-center = big suit.
 function cardHTML(card, options = {}) {
   if (!card) {
     return `<div class="card ${options.flipped ? "" : "flipped"}">
@@ -829,9 +813,9 @@ function cardHTML(card, options = {}) {
     <div class="card ${flipped ? "flipped" : ""} ${options.dealIn ? "deal-in" : ""}">
       <div class="card-face card-back"></div>
       <div class="card-face card-front ${colorClass}">
-        <div class="corner tl"><div class="rank">${card.label}</div><div class="suit-mini">${card.suit.sym}</div></div>
-        ${centerHTML(card)}
-        <div class="corner br"><div class="rank">${card.label}</div><div class="suit-mini">${card.suit.sym}</div></div>
+        <div class="corner-suit">${card.suit.sym}</div>
+        <div class="corner-rank">${card.label}</div>
+        <div class="bottom-suit">${card.suit.sym}</div>
       </div>
     </div>
   `;
@@ -1033,8 +1017,13 @@ function renderReveal() {
   const isTiebreaker = !!serverState.isTiebreaker;
   const tiebreakerScheduled = !!serverState.tiebreakerScheduled;
   const isFinal = !!result.final;
-  const stage = serverState.stage || "flop";
+  const stage = serverState.stage || "deal";
   const isShowdown = stage === "showdown";
+  const nextStageLabel =
+    stage === "deal"  ? "FLOP" :
+    stage === "flop"  ? "TURN" :
+    stage === "turn"  ? "RIVER" :
+    stage === "river" ? "SHOWDOWN" : "";
 
   // Stage transitions trigger re-render via the included `stage` key.
   const revealKey = JSON.stringify({
@@ -1066,17 +1055,10 @@ function renderReveal() {
   if (!isShowdown) {
     if (isHost) {
       advanceBtn.style.display = "";
-      advanceBtn.textContent =
-        stage === "flop"  ? "TURN" :
-        stage === "turn"  ? "RIVER" :
-        stage === "river" ? "SHOWDOWN" : "";
+      advanceBtn.textContent = nextStageLabel;
     } else {
       waiting.style.display = "";
-      waiting.textContent = `ホストの操作待ち · 次は ${
-        stage === "flop"  ? "TURN" :
-        stage === "turn"  ? "RIVER" :
-        stage === "river" ? "SHOWDOWN" : "—"
-      }`;
+      waiting.textContent = `ホストの操作待ち · 次は ${nextStageLabel || "—"}`;
     }
   } else if (isFinal) {
     if (isHost) nextBtn.style.display = "";

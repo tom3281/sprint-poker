@@ -11,8 +11,9 @@ const GRACE_MS = 15_000;          // hold a seat through disconnect/reconnect
 const TIEBREAKER_DELAY_MS = 4_000; // savor the showdown before a tiebreaker re-deal
 const MAX_TIEBREAKER_ROUNDS = 6;   // safety net against pathological infinite ties
 
-// REVEAL phase substages — drive the progressive flop→turn→river→showdown flow.
+// REVEAL phase substages — host taps "めくる" to advance each one.
 const STAGES = {
+  DEAL: "deal",         // hole dealt, board empty (waiting for FLOP tap)
   FLOP: "flop",         // 3 community cards visible
   TURN: "turn",         // 4 community cards visible
   RIVER: "river",       // 5 community cards visible
@@ -269,12 +270,13 @@ export class GameRoom {
         }
         break;
       case "advance":
-        // Host taps to flip the next stage: FLOP → TURN → RIVER → SHOWDOWN.
+        // Host taps to flip the next stage: DEAL → FLOP → TURN → RIVER → SHOWDOWN.
         // The SHOWDOWN itself triggers _resolveShowdown which decides drinks /
         // tiebreaker. Spectators / non-hosts can't advance.
         if (playerId === this.hostId
             && this.phase === PHASES.REVEAL
-            && (this.stage === STAGES.FLOP
+            && (this.stage === STAGES.DEAL
+                || this.stage === STAGES.FLOP
                 || this.stage === STAGES.TURN
                 || this.stage === STAGES.RIVER)) {
           this._advanceStage();
@@ -364,9 +366,9 @@ export class GameRoom {
     this.dealAndCompute();
   }
 
-  // Round entry: deal cards and reveal the flop. The host advances through
-  // TURN / RIVER / SHOWDOWN by tapping the "めくる" button (the "advance"
-  // message). Tiebreaker re-deal is still server-driven (auto-fires after
+  // Round entry: deal hole cards but leave the board face-down. The host
+  // taps "FLOP" to flip the first 3, then TURN / RIVER / SHOWDOWN one by one.
+  // Tiebreaker re-deal is still server-driven (auto-fires after
   // TIEBREAKER_DELAY_MS once a tie is locked in at SHOWDOWN).
   dealAndCompute() {
     const deck = buildDeck();
@@ -376,14 +378,18 @@ export class GameRoom {
     this._fullCommunity = [deck.pop(), deck.pop(), deck.pop(), deck.pop(), deck.pop()];
 
     this.lastResult = null;
-    this.stage = STAGES.FLOP;
-    this.community = this._fullCommunity.slice(0, 3);
+    this.stage = STAGES.DEAL;
+    this.community = [];                 // empty until host taps FLOP
     this.clearTimer();
     this.broadcast();
   }
 
   _advanceStage() {
-    if (this.stage === STAGES.FLOP) {
+    if (this.stage === STAGES.DEAL) {
+      this.stage = STAGES.FLOP;
+      this.community = this._fullCommunity.slice(0, 3);
+      this.broadcast();
+    } else if (this.stage === STAGES.FLOP) {
       this.stage = STAGES.TURN;
       this.community = this._fullCommunity.slice(0, 4);
       this.broadcast();
